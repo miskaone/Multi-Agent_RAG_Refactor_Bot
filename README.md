@@ -5,6 +5,8 @@
 ![Tests](https://img.shields.io/badge/tests-262%20passing-brightgreen.svg)
 ![Coverage](https://img.shields.io/badge/coverage-91%25-brightgreen.svg)
 
+Legacy JS/TS codebases are hard to refactor safely at scale. This bot uses a multi-agent pipeline to analyze, plan, execute, and validate refactoring tasks with RAG-grounded context.
+
 An AI-powered refactoring pipeline for JavaScript and TypeScript codebases. Uses multiple specialized agents orchestrated via LangGraph to analyze, plan, execute, audit, and validate code refactoring tasks with retrieval-augmented generation (RAG) for context-aware transformations.
 
 ## How It Works
