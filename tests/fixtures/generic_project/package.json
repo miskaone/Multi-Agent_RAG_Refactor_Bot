@@ -1,0 +1,6 @@
+{
+  "name": "test-express-app",
+  "dependencies": {
+    "express": "4.18.0"
+  }
+}
