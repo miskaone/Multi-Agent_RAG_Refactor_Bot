@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-02-18
+
+### Added
+
+- Skills architecture primitives: `Skill` protocol, registry, manager, and typed skill metadata/model support.
+- New skill package: `vercel_react_best_practices` with package loader, metadata, and guidance docs.
+- `low_trust_pass` field in `TestReport` to distinguish explicit no-runner LLM fallback from normal test passes.
+
+### Changed
+
+- CLI enhancements for skill-driven workflows:
+  - `--skills` for explicit skill activation
+  - `--allow-no-runner-pass` for controlled low-trust fallback when no test runner is present
+- Refactor planning/execution/auditing now incorporate active skill context and rules.
+- Orchestration graph now activates skills at repo-index time and can enforce low-trust guardrails in decision logic.
+
+### Security
+
+- No-runner test paths now fail closed by default; fallback is only allowed when explicitly enabled.
+
+### Documentation
+
+- Added/updated architecture and execution-readiness documentation:
+  - `docs/SKILLS_ARCHITECTURE.md`
+  - `docs/DECISIONS.md`
+  - `docs/Skills Architecture.md`
+  - `docs/Application_Design_and_Specification_for_Dev_Review.md`
+  - `docs/Developer Handoff Plan Closing All Gaps for Multi-Agent RAG Refactor Bot v0.1.1.md`
+
+### Known Risks
+
+- `src/refactor_bot/skills/vercel_react_best_practices/rules.py` and official Vercel SKILL/AGENTS text are still placeholders.
+- Consumers must treat `low_trust_pass` as non-equivalent to full, hard test validation.
+
 ## [0.1.0] - 2026-02-17
 
 ### Added
@@ -25,4 +59,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `symlinks=False` in `shutil.copytree` prevents symlink escape
 - Directive injection defense via substring + regex patterns in Planner
 
+[0.1.1]: https://github.com/miskaone/Multi-Agent_RAG_Refactor_Bot/releases/tag/v0.1.1
 [0.1.0]: https://github.com/miskaone/Multi-Agent_RAG_Refactor_Bot/releases/tag/v0.1.0
