@@ -69,3 +69,4 @@ class TestReport(BaseModel):
     runner_available: bool = True
     llm_analysis: str | None = None
     tested_at: datetime = Field(default_factory=datetime.now)
+    low_trust_pass: bool = False

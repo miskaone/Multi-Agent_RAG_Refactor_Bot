@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "organization": "Vercel Engineering",
+  "date": "January 2026",
+  "abstract": "Comprehensive performance optimization guide for React and Next.js applications.",
+  "references": ["https://react.dev", "https://nextjs.org"]
+}
