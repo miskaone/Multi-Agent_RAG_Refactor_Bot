@@ -18,8 +18,11 @@ from refactor_bot.models.schemas import (
     SymbolInfo,
 )
 from refactor_bot.models.task_models import TaskNode, TaskStatus
+from refactor_bot.models.skill_models import RefactorRule, SkillMetadata
 
 __all__ = [
+    "RefactorRule",
+    "SkillMetadata",
     "AuditFinding",
     "AuditReport",
     "BreakingChange",
