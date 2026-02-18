@@ -10,6 +10,7 @@ from refactor_bot.models.report_models import AuditFinding, AuditReport, Finding
 from refactor_bot.models.schemas import RepoIndex, FileInfo, SymbolInfo
 from refactor_bot.rules import REACT_RULES
 from refactor_bot.rules.rule_engine import ReactRule
+from refactor_bot.skills.registry import registry
 from refactor_bot.utils.ast_parser import (
     get_language_for_file,
     get_parser,
@@ -63,6 +64,7 @@ class ConsistencyAuditor:
         self,
         diffs: list[FileDiff],
         repo_index: RepoIndex,
+        react_rules: list[ReactRule] | None = None,
     ) -> AuditReport:
         """Run all audits and return consolidated report.
 
@@ -70,6 +72,9 @@ class ConsistencyAuditor:
         """
         self._finding_counter = 0
         all_findings: list[AuditFinding] = []
+        effective_rules = react_rules if react_rules is not None else self._rules
+        if not effective_rules:
+            effective_rules = list(registry.get_all_rules()) or list(REACT_RULES)
 
         for diff in diffs:
             orphan_findings = self._check_orphaned_imports(diff)
@@ -86,7 +91,10 @@ class ConsistencyAuditor:
         # Anti-pattern checks (only for React projects)
         if repo_index.is_react_project:
             for diff in diffs:
-                ap_findings = self._check_react_anti_patterns(diff)
+                ap_findings = self._check_react_anti_patterns(
+                    diff,
+                    effective_rules,
+                )
                 all_findings.extend(ap_findings)
 
         # Note: if parseable_count == 0, all diffs had unsupported extensions.
@@ -391,6 +399,7 @@ class ConsistencyAuditor:
     def _check_react_anti_patterns(
         self,
         diff: FileDiff,
+        react_rules: list[ReactRule] | None = None,
     ) -> list[AuditFinding]:
         """Check modified_content against ANTI_PATTERN_SIGNALS dict.
         Emit WARNING finding with finding_type='anti_pattern' and rule_id set.
@@ -400,9 +409,10 @@ class ConsistencyAuditor:
 
         # Build signals from self._rules if available, fall back to module-level
         signals_map = ANTI_PATTERN_SIGNALS
-        if self._rules:
+        active_rules = react_rules or self._rules
+        if active_rules:
             # Build rule_id set for filtering
-            active_rule_ids = {r.rule_id for r in self._rules}
+            active_rule_ids = {r.rule_id for r in active_rules}
             signals_map = {
                 k: v for k, v in ANTI_PATTERN_SIGNALS.items()
                 if k in active_rule_ids

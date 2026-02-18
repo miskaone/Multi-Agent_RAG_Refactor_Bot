@@ -14,6 +14,7 @@ from refactor_bot.agents.exceptions import (
 )
 from refactor_bot.models import FileDiff, FileInfo, RepoIndex, RetrievalResult, TaskNode
 from refactor_bot.rules import REACT_RULES, ReactRule
+from refactor_bot.skills.registry import registry
 from refactor_bot.utils.diff_generator import (
     detect_code_style,
     generate_unified_diff,
@@ -98,9 +99,15 @@ class RefactorExecutor:
         # Step 3: Detect code style from first source file
         first_source = next(iter(source_files.values()))
         style = detect_code_style(first_source)
+        skill_context = registry.get_prompt_context_for_all_active(
+            directive=task.description,
+            task=task,
+        )
 
         # Step 4: Build prompt
         prompt = self._build_prompt(task, source_files, context, rules, style)
+        if skill_context:
+            prompt += f"\n\nSkill Context:\n{skill_context}"
 
         # Step 5: Call Claude API
         try:
@@ -201,6 +208,8 @@ class RefactorExecutor:
 
         # Build lookup map
         rule_map = {rule.rule_id: rule for rule in REACT_RULES}
+        for skill_rule in registry.get_all_rules():
+            rule_map[skill_rule.rule_id] = skill_rule
 
         # Look up rules, silently ignoring unknown IDs
         rules = []

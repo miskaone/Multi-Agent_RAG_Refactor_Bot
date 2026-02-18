@@ -14,6 +14,7 @@ from refactor_bot.agents.exceptions import (
 )
 from refactor_bot.models import RepoIndex, RetrievalResult, TaskNode, TaskStatus
 from refactor_bot.rules import REACT_RULES, select_applicable_rules
+from refactor_bot.skills.registry import registry
 
 MAX_DIRECTIVE_LENGTH = 2000
 MAX_FILES_IN_PROMPT = 50
@@ -102,9 +103,21 @@ class Planner:
         is_react = repo_index.is_react_project
         applicable_rule_ids = select_applicable_rules(directive, is_react)
         applicable_rules = [rule for rule in REACT_RULES if rule.rule_id in applicable_rule_ids]
+        # Merge in active skill rule IDs for forward compatibility
+        skill_rules = registry.get_all_rules()
+        applicable_rule_ids.extend(
+            [rule.rule_id for rule in skill_rules if rule.rule_id not in applicable_rule_ids]
+        )
 
-        # Step 3: Build prompt
-        prompt = self._build_prompt(directive, repo_index, context, applicable_rules)
+        # Step 3: Build prompt with skill prompt-context if any are active
+        skill_context = registry.get_prompt_context_for_all_active(directive)
+        prompt = self._build_prompt(
+            directive=directive,
+            repo_index=repo_index,
+            context=context,
+            applicable_rules=applicable_rules,
+            skill_context=skill_context,
+        )
 
         # Step 4: Call Claude API with tool-use
         try:
@@ -172,6 +185,7 @@ class Planner:
         repo_index: RepoIndex,
         context: list[RetrievalResult],
         applicable_rules: list[Any],
+        skill_context: str = "",
     ) -> str:
         """Build the prompt for Claude API.
 
@@ -203,6 +217,10 @@ class Planner:
             for rule in applicable_rules:
                 rules_summary += f"\n- {rule.rule_id} ({rule.priority}): {rule.description}\n"
 
+        skill_instructions = ""
+        if skill_context:
+            skill_instructions = "\n\nSkill Context:\n" + skill_context
+
         prompt = f"""You are a refactoring assistant. Your task is to decompose the following \
 refactoring directive into a structured task plan.
 
@@ -218,6 +236,7 @@ Sample files in repository:
 Relevant code context:
 {context_summary}
 {rules_summary}
+{skill_instructions}
 
 Your task:
 1. Break down the directive into atomic refactoring tasks

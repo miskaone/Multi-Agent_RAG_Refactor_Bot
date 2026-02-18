@@ -15,6 +15,8 @@ from refactor_bot.agents.repo_indexer import RepoIndexer
 from refactor_bot.agents.test_validator import TestValidator
 from refactor_bot.models import AuditReport, TaskStatus, TestReport, TestRunResult
 from refactor_bot.orchestrator.exceptions import GraphBuildError
+from refactor_bot.skills.manager import activate_skills_for_repo
+from refactor_bot.skills.registry import registry
 from refactor_bot.orchestrator.recovery import (
     compute_test_pass_rate,
     find_task_index,
@@ -31,7 +33,11 @@ PLAN_NODE_TOP_K = 10
 EXECUTE_NODE_TOP_K = 5
 
 
-def make_index_node(indexer: RepoIndexer, retriever: Retriever) -> Callable[[RefactorState], dict]:
+def make_index_node(
+    indexer: RepoIndexer,
+    retriever: Retriever,
+    selected_skills: list[str] | None = None,
+) -> Callable[[RefactorState], dict]:
     """Factory: returns a node closure that indexes the repository.
 
     The closure:
@@ -45,6 +51,11 @@ def make_index_node(indexer: RepoIndexer, retriever: Retriever) -> Callable[[Ref
     def index_node(state: RefactorState) -> dict:
         try:
             repo_index = indexer.index(state["repo_path"])
+            activate_skills_for_repo(
+                repo_index=repo_index,
+                directive=state["directive"],
+                selected_skill_names=selected_skills,
+            )
             embedding_stats = retriever.index_repo(repo_index)
             return {
                 "repo_index": repo_index,
@@ -201,7 +212,12 @@ def make_audit_node(auditor: ConsistencyAuditor) -> Callable[[RefactorState], di
             task_diffs = list(state["diffs"])
 
         try:
-            report = auditor.audit(diffs=task_diffs, repo_index=state["repo_index"])
+            active_rules = registry.get_all_rules()
+            report = auditor.audit(
+                diffs=task_diffs,
+                repo_index=state["repo_index"],
+                react_rules=active_rules,
+            )
             return {"audit_results": report}
         except Exception as exc:
             # Synthetic failed report
@@ -429,6 +445,9 @@ def make_decide_fn() -> Callable[[RefactorState], str]:
         # Check test result
         tests_passed = test_results is not None and test_results.passed
 
+        if test_results is not None and getattr(test_results, "low_trust_pass", False):
+            return "abort"
+
         if audit_passed and tests_passed:
             return "apply"
 
@@ -456,6 +475,7 @@ def build_graph(
     executor: RefactorExecutor,
     auditor: ConsistencyAuditor,
     validator: TestValidator,
+    selected_skills: list[str] | None = None,
 ):
     """Build and compile the orchestrator StateGraph.
 
@@ -488,7 +508,7 @@ def build_graph(
         graph = StateGraph(RefactorState)
 
         # Create node closures
-        _index_node = make_index_node(indexer, retriever)
+        _index_node = make_index_node(indexer, retriever, selected_skills)
         _plan_node = make_plan_node(planner, retriever)
         _execute_node = make_execute_node(executor, retriever)
         _audit_node = make_audit_node(auditor)

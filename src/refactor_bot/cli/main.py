@@ -31,6 +31,7 @@ ABORT_PREFIX = "ABORT:"
 _SAFE_CONFIG_KEYS = frozenset({
     "directive", "repo_path", "max_retries", "model",
     "vector_store_dir", "timeout", "verbose", "dry_run", "output_json",
+    "skills", "allow_no_runner_pass",
 })
 
 
@@ -72,6 +73,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output-json", action="store_true", help="Output results as JSON"
+    )
+    parser.add_argument(
+        "--skills",
+        type=str,
+        default="",
+        help=(
+            "Comma-separated skill package names to activate "
+            "(for example: vercel-react-best-practices)"
+        ),
+    )
+    parser.add_argument(
+        "--allow-no-runner-pass",
+        action="store_true",
+        help=(
+            "Allow LLM-only test validation when no test runner is detected "
+            "(low-trust, default blocks pipeline)"
+        ),
     )
     return parser
 
@@ -131,7 +149,10 @@ def create_agents(args: argparse.Namespace) -> dict:
     executor = RefactorExecutor(api_key=api_key, model=args.model)
     auditor = ConsistencyAuditor()
     validator = TestValidator(
-        api_key=api_key, model=args.model, timeout_seconds=args.timeout
+        api_key=api_key,
+        model=args.model,
+        timeout_seconds=args.timeout,
+        allow_no_runner_pass=args.allow_no_runner_pass,
     )
 
     return {
@@ -262,6 +283,8 @@ def main(argv: list[str] | None = None) -> int:
         "verbose": args.verbose,
         "dry_run": args.dry_run,
         "output_json": args.output_json,
+        "skills": args.skills,
+        "allow_no_runner_pass": args.allow_no_runner_pass,
     }
 
     if args.dry_run:
@@ -277,7 +300,10 @@ def main(argv: list[str] | None = None) -> int:
         from refactor_bot.orchestrator.graph import build_graph
         from refactor_bot.orchestrator.state import make_initial_state
 
-        graph = build_graph(**agents)
+        selected_skills = [
+            skill.strip() for skill in (args.skills or "").split(",") if skill.strip()
+        ]
+        graph = build_graph(**agents, selected_skills=selected_skills or None)
         state = make_initial_state(
             directive=args.directive,
             repo_path=repo_path,
