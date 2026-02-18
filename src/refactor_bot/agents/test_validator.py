@@ -39,6 +39,7 @@ class TestValidator:
         api_key: str | None = None,
         model: str = "claude-sonnet-4-5-20250929",
         timeout_seconds: int = DEFAULT_TIMEOUT,
+        allow_no_runner_pass: bool = False,
     ) -> None:
         """Initialize with optional LLM client for fallback.
         api_key falls back to ANTHROPIC_API_KEY env var.
@@ -46,6 +47,7 @@ class TestValidator:
         self.api_key: str | None = api_key or os.getenv("ANTHROPIC_API_KEY")
         self.model: str = model
         self.timeout_seconds: int = timeout_seconds
+        self.allow_no_runner_pass: bool = allow_no_runner_pass
         self.client: Anthropic | None = None
         if self.api_key:
             self.client = Anthropic(api_key=self.api_key)
@@ -75,7 +77,20 @@ class TestValidator:
         runner = self._detect_runner(repo_path)
 
         if runner is None:
-            # No test runner detected; try LLM fallback
+            if not self.allow_no_runner_pass:
+                return TestReport(
+                    passed=False,
+                    runner_available=False,
+                    llm_analysis="No test runner detected; use --allow-no-runner-pass to continue",
+                    post_run=TestRunResult(
+                        runner="none",
+                        exit_code=TIMEOUT_EXIT_CODE,
+                        stdout="",
+                        stderr="",
+                    ),
+                )
+
+            # No test runner detected: try LLM fallback only when explicitly allowed
             if self.client is None:
                 return TestReport(
                     passed=False,
@@ -92,6 +107,7 @@ class TestValidator:
             return TestReport(
                 passed=True,
                 runner_available=False,
+                low_trust_pass=True,
                 llm_analysis=llm_analysis,
                 post_run=TestRunResult(
                     runner="llm_fallback",
