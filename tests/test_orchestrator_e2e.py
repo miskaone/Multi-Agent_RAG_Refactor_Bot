@@ -226,6 +226,48 @@ class TestE2ERetryThenSucceed:
 
 
 # ---------------------------------------------------------------------------
+# Test 2b: Skip when retries exhausted
+# ---------------------------------------------------------------------------
+
+class TestE2ESkipOnRetriesExhausted:
+    def test_e2e_skip_on_retries_exhausted(self):
+        """Repeated audit failures and passing tests -> final state is skipped task."""
+        task = _make_task("RF-001")
+        diff = _make_diff("RF-001")
+        repo_index = _make_repo_index()
+
+        indexer = MagicMock()
+        indexer.index.return_value = repo_index
+
+        retriever = MagicMock()
+        retriever.index_repo.return_value = {"total_embedded": 5}
+        retriever.query.return_value = _make_retrieval_results()
+
+        planner = MagicMock()
+        planner.decompose.return_value = [task]
+
+        executor = MagicMock()
+        executor.execute.return_value = [diff]
+
+        # Audit fails every pass; retries exhaust and task is marked skipped.
+        auditor = MagicMock()
+        auditor.audit.side_effect = [_make_failed_audit(), _make_failed_audit()]
+
+        validator = MagicMock()
+        validator.validate.return_value = _make_test_report(passed=True)
+
+        graph = build_graph(indexer, retriever, planner, executor, auditor, validator)
+        result = graph.invoke(
+            make_initial_state(directive="Refactor hooks", repo_path="/tmp/repo", max_retries=1),
+            config={"recursion_limit": 100},
+        )
+
+        skipped_tasks = [t for t in result["task_tree"] if t.task_id == "RF-001"]
+        assert len(skipped_tasks) == 1
+        assert skipped_tasks[0].status == TaskStatus.SKIPPED
+
+
+# ---------------------------------------------------------------------------
 # Test 3: Abort on low test pass rate
 # ---------------------------------------------------------------------------
 

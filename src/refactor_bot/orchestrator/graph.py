@@ -424,7 +424,7 @@ def make_decide_fn() -> Callable[[RefactorState], str]:
     4. else -> "abort" (retries exhausted)
 
     Returns:
-        Callable that returns one of: "apply", "retry", "abort"
+        Callable that returns one of: "apply", "retry", "skip", "abort"
     """
 
     def decide_fn(state: RefactorState) -> str:
@@ -463,8 +463,14 @@ def make_decide_fn() -> Callable[[RefactorState], str]:
             if pass_rate < TEST_PASS_RATE_ABORT_THRESHOLD:
                 return "abort"
 
-        # Check retry budget
+        # Check retry budget first for audit failures
         current_retries = retry_counts.get(task_id, 0)
+        if not audit_passed and test_results is not None and test_results.passed:
+            if current_retries < max_retries:
+                return "retry"
+            return "skip"
+
+        # Check retry budget
         if current_retries < max_retries:
             return "retry"
 
@@ -529,6 +535,7 @@ def build_graph(
         graph.add_node("validate_node", _validate_node)
         graph.add_node("apply_node", apply_node)
         graph.add_node("retry_node", retry_node)
+        graph.add_node("skip_node", skip_node)
         graph.add_node("abort_node", abort_node)
 
         # Linear edges: START -> index -> plan -> execute -> audit -> validate
@@ -545,6 +552,7 @@ def build_graph(
             {
                 "apply": "apply_node",
                 "retry": "retry_node",
+                "skip": "skip_node",
                 "abort": "abort_node",
             },
         )
