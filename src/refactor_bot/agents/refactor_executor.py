@@ -2,9 +2,11 @@
 
 import os
 from pathlib import Path
-from typing import Any
+import json
+from typing import Any, Literal
 
 from anthropic import Anthropic
+import openai
 
 from refactor_bot.agents.exceptions import (
     AgentError,
@@ -36,6 +38,10 @@ class RefactorExecutor:
         self,
         api_key: str | None = None,
         model: str = "claude-sonnet-4-5-20250929",
+        llm_provider: str = "auto",
+        llm_fallback_provider: str | None = None,
+        allow_fallback: bool = False,
+        allow_human_fallback: bool = False,
     ) -> None:
         """Initialize the executor.
 
@@ -46,14 +52,133 @@ class RefactorExecutor:
         Raises:
             AgentError: If no API key is found.
         """
-        self.api_key: str = api_key or os.getenv("ANTHROPIC_API_KEY", "")
-        if not self.api_key:
-            raise AgentError(
-                "No Anthropic API key found. "
-                "Provide via parameter or ANTHROPIC_API_KEY env var."
-            )
         self.model: str = model
-        self.client: Anthropic = Anthropic(api_key=self.api_key)
+        self.api_key: str | None = (
+            api_key
+            or os.getenv("ANTHROPIC_API_KEY")
+            or os.getenv("CLAUDE_CODE_OAUTH_TOKEN")
+        )
+        self.openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
+        self.llm_provider: Literal["anthropic", "openai", "auto"] = "auto"
+        self.llm_fallback_provider: str | None = None
+        self.allow_fallback: bool = False
+        self.allow_human_fallback: bool = False
+        self._anthropic_client: Anthropic | None = None
+        self._openai_client: openai.OpenAI | None = None
+
+        if self.api_key:
+            self._anthropic_client = Anthropic(api_key=self.api_key)
+        if self.openai_api_key:
+            self._openai_client = openai.OpenAI(api_key=self.openai_api_key)
+
+        if not (self._anthropic_client or self._openai_client):
+            raise AgentError(
+                "No Anthropic or OpenAI API key found. "
+                "Provide via parameter, ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, "
+                "or OPENAI_API_KEY env vars."
+            )
+        self.set_provider_config(
+            llm_provider=llm_provider,
+            llm_fallback_provider=llm_fallback_provider,
+            allow_fallback=allow_fallback,
+            allow_human_fallback=allow_human_fallback,
+        )
+
+    def _normalize_provider(
+        self,
+        value: str,
+    ) -> Literal["anthropic", "openai", "auto"]:
+        if value not in {"auto", "anthropic", "openai"}:
+            raise ExecutionError(f"Unsupported provider: {value}")
+        return value
+
+    def set_provider_config(
+        self,
+        llm_provider: str = "auto",
+        llm_fallback_provider: str | None = None,
+        allow_fallback: bool = False,
+        allow_human_fallback: bool = False,
+    ) -> None:
+        self.llm_provider = self._normalize_provider(llm_provider)
+        self.llm_fallback_provider = (
+            self._normalize_provider(llm_fallback_provider)
+            if llm_fallback_provider
+            else None
+        )
+        self.allow_fallback = bool(allow_fallback)
+        self.allow_human_fallback = bool(allow_human_fallback)
+
+        if self.llm_provider == "anthropic" and self._anthropic_client is None:
+            raise ExecutionError(
+                "No Anthropic API key found for --llm-provider=anthropic."
+            )
+        if self.llm_provider == "openai" and self._openai_client is None:
+            raise ExecutionError("No OpenAI API key found for --llm-provider=openai.")
+        if self.allow_fallback and self.llm_fallback_provider:
+            if self.llm_fallback_provider == "anthropic" and self._anthropic_client is None:
+                raise ExecutionError(
+                    "Fallback provider requested as anthropic but ANTHROPIC_API_KEY is not set."
+                )
+            if self.llm_fallback_provider == "openai" and self._openai_client is None:
+                raise ExecutionError(
+                    "Fallback provider requested as openai but OPENAI_API_KEY is not set."
+                )
+
+    def _primary_provider(self) -> Literal["anthropic", "openai"]:
+        if self.llm_provider == "auto":
+            if self._anthropic_client is not None:
+                return "anthropic"
+            return "openai"
+        return self.llm_provider
+
+    def _resolve_model(self, provider: str) -> str:
+        if provider == "openai" and self.model.startswith("claude-"):
+            return "gpt-4o-mini"
+        return self.model
+
+    def _provider_chain(self) -> list[str]:
+        chain: list[str] = [self._primary_provider()]
+        if self.allow_fallback and self.llm_fallback_provider:
+            fallback = self.llm_fallback_provider
+            if fallback != chain[0]:
+                chain.append(fallback)
+        return chain
+
+    def _prompt_fallback(self, error: Exception, fallback_provider: str) -> bool:
+        if not self.allow_human_fallback:
+            return False
+        try:
+            response = input(
+                f"Executor LLM call failed with {type(error).__name__}: {error} "
+                f"\nUse fallback provider '{fallback_provider}'? [y/N]: "
+            ).strip().lower()
+            return response in {"y", "yes"}
+        except EOFError:
+            return False
+
+    def _get_openai_tool_schema(self, schema: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": schema["name"],
+                "description": schema.get("description", ""),
+                "parameters": schema.get("input_schema", {}),
+            },
+        }
+
+    def _parse_openai_tool_payload(self, response: Any) -> list[dict[str, Any]]:
+        message = response.choices[0].message
+        tool_calls = getattr(message, "tool_calls", None)
+        if not tool_calls:
+            raise ExecutionError("No tool call found in OpenAI response")
+        call = tool_calls[0]
+        if getattr(call, "type", "function") != "function":
+            raise ExecutionError("OpenAI tool call type is not function")
+        function = call.function
+        args = json.loads(function.arguments or "{}")
+        if not isinstance(args, dict):
+            raise ExecutionError("OpenAI tool arguments were not a valid JSON object")
+        return args.get("file_diffs", [])
 
     def execute(
         self,
@@ -109,19 +234,60 @@ class RefactorExecutor:
         if skill_context:
             prompt += f"\n\nSkill Context:\n{skill_context}"
 
-        # Step 5: Call Claude API
-        try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=MAX_API_TOKENS,
-                tools=[self._get_tool_schema()],
-                messages=[{"role": "user", "content": prompt}],
-            )
-        except Exception as e:
-            raise ExecutionError(f"Failed to call Claude API: {e}") from e
+        # Step 5: Call LLM API
+        response = None
+        used_provider = ""
+        providers = self._provider_chain()
+        last_error: Exception | None = None
+        tool_schema = self._get_tool_schema()
+        for index, provider in enumerate(providers):
+            try:
+                if provider == "anthropic":
+                    if not self._anthropic_client:
+                        raise ExecutionError("Anthropic client unavailable")
+                    response = self._anthropic_client.messages.create(
+                        model=self._resolve_model("anthropic"),
+                        max_tokens=MAX_API_TOKENS,
+                        tools=[tool_schema],
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+                else:
+                    if not self._openai_client:
+                        raise ExecutionError("OpenAI client unavailable")
+                    response = self._openai_client.chat.completions.create(
+                        model=self._resolve_model("openai"),
+                        max_tokens=MAX_API_TOKENS,
+                        tools=[self._get_openai_tool_schema(tool_schema)],
+                        tool_choice={
+                            "type": "function",
+                            "function": {"name": "generate_refactored_code"},
+                        },
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+                used_provider = provider
+                break
+            except Exception as error:
+                last_error = error
+                if index >= len(providers) - 1:
+                    break
+                if not self.allow_fallback and not self.allow_human_fallback:
+                    break
+                if not self._prompt_fallback(error, providers[index + 1]):
+                    break
 
         # Step 6: Parse response into FileDiff objects
-        diffs = self._parse_tool_response(response, task.task_id, source_files)
+        if response is None:
+            raise ExecutionError(f"Failed to call LLM: {last_error}") from last_error
+
+        if used_provider == "openai":
+            diffs = self._parse_tool_response(
+                response,
+                task.task_id,
+                source_files,
+                provider="openai",
+            )
+        else:
+            diffs = self._parse_tool_response(response, task.task_id, source_files)
 
         if not diffs:
             raise DiffGenerationError(f"No diffs generated for task '{task.task_id}'")
@@ -342,6 +508,7 @@ Generate the refactored code now.
         response: Any,
         task_id: str,
         source_files: dict[str, str],
+        provider: str = "anthropic",
     ) -> list[FileDiff]:
         """Parse Claude tool-use response into FileDiff objects.
 
@@ -362,49 +529,48 @@ Generate the refactored code now.
         Raises:
             DiffGenerationError: If no tool_use block found or parsing fails.
         """
-        # Find tool_use block
-        tool_use = None
-        for block in response.content:
-            if block.type == "tool_use" and block.name == "generate_refactored_code":
-                tool_use = block
-                break
-
-        if not tool_use:
-            raise DiffGenerationError("No tool_use block found in Claude response")
-
         try:
-            # Parse tool input
-            tool_input = tool_use.input
-            file_diffs_data = tool_input.get("file_diffs", [])
+            if provider == "openai":
+                file_diffs_data = self._parse_openai_tool_payload(response)
+            else:
+                tool_use = None
+                for block in response.content:
+                    if (
+                        block.type == "tool_use"
+                        and block.name == "generate_refactored_code"
+                    ):
+                        tool_use = block
+                        break
+
+                if not tool_use:
+                    raise DiffGenerationError(
+                        "No tool_use block found in Claude response"
+                    )
+                tool_input = tool_use.input
+                file_diffs_data = tool_input.get("file_diffs", [])
 
             if not file_diffs_data:
                 raise DiffGenerationError("No file_diffs returned in tool response")
 
-            # Check limits
             if len(file_diffs_data) > MAX_DIFFS_PER_TASK:
                 raise DiffGenerationError(
                     f"Too many diffs returned ({len(file_diffs_data)} > {MAX_DIFFS_PER_TASK})"
                 )
 
-            # Convert to FileDiff objects
             diffs = []
             for diff_data in file_diffs_data:
                 file_path = diff_data["file_path"]
                 modified_content = diff_data["modified_content"]
 
-                # Look up original content
                 original_content = source_files.get(file_path)
                 if original_content is None:
                     raise DiffGenerationError(
                         f"File '{file_path}' not found in source files"
                     )
 
-                # Generate unified diff
                 diff_text = generate_unified_diff(
                     file_path, original_content, modified_content
                 )
-
-                # Create FileDiff
                 diff = FileDiff(
                     file_path=file_path,
                     original_content=original_content,

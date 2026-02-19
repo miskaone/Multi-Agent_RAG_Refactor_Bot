@@ -2,9 +2,11 @@
 
 import os
 import re
-from typing import Any
+import json
+from typing import Any, Literal
 
 from anthropic import Anthropic
+import openai
 
 from refactor_bot.agents.exceptions import (
     AgentError,
@@ -59,7 +61,15 @@ _INJECTION_REGEXES = [
 class Planner:
     """Decomposes refactor directives into structured task DAGs."""
 
-    def __init__(self, api_key: str | None = None, model: str = "claude-sonnet-4-5-20250929"):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str = "claude-sonnet-4-5-20250929",
+        llm_provider: str = "auto",
+        llm_fallback_provider: str | None = None,
+        allow_fallback: bool = False,
+        allow_human_fallback: bool = False,
+    ):
         """Initialize the planner.
 
         Args:
@@ -69,14 +79,153 @@ class Planner:
         Raises:
             AgentError: If no API key is found
         """
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        if not self.api_key:
-            raise AgentError(
-                "No Anthropic API key found. "
-                "Provide via parameter or ANTHROPIC_API_KEY env var."
-            )
         self.model = model
-        self.client = Anthropic(api_key=self.api_key)
+        self.api_key: str | None = (
+            api_key
+            or os.getenv("ANTHROPIC_API_KEY")
+            or os.getenv("CLAUDE_CODE_OAUTH_TOKEN")
+        )
+        self.openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
+        self.llm_provider: Literal["anthropic", "openai", "auto"] = "auto"
+        self.llm_fallback_provider: str | None = None
+        self.allow_fallback: bool = False
+        self.allow_human_fallback: bool = False
+        self._anthropic_client: Anthropic | None = None
+        self._openai_client: openai.OpenAI | None = None
+        if self.api_key:
+            self._anthropic_client = Anthropic(api_key=self.api_key)
+        if self.openai_api_key:
+            self._openai_client = openai.OpenAI(api_key=self.openai_api_key)
+        if not (self._anthropic_client or self._openai_client):
+            raise AgentError(
+                "No Anthropic or OpenAI API key found. "
+                "Provide via parameters, ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, "
+                "or OPENAI_API_KEY env vars."
+            )
+        self.set_provider_config(
+            llm_provider=llm_provider,
+            llm_fallback_provider=llm_fallback_provider,
+            allow_fallback=allow_fallback,
+            allow_human_fallback=allow_human_fallback,
+        )
+
+    def _normalize_provider(
+        self,
+        value: str,
+    ) -> Literal["anthropic", "openai", "auto"]:
+        if value not in {"auto", "anthropic", "openai"}:
+            raise PlanningError(f"Unsupported provider: {value}")
+        return value
+
+    def set_provider_config(
+        self,
+        llm_provider: str = "auto",
+        llm_fallback_provider: str | None = None,
+        allow_fallback: bool = False,
+        allow_human_fallback: bool = False,
+    ) -> None:
+        self.llm_provider = self._normalize_provider(llm_provider)
+        self.llm_fallback_provider = (
+            self._normalize_provider(llm_fallback_provider)
+            if llm_fallback_provider
+            else None
+        )
+        self.allow_fallback = bool(allow_fallback)
+        self.allow_human_fallback = bool(allow_human_fallback)
+
+        if self.llm_provider == "anthropic" and self._anthropic_client is None:
+            raise PlanningError(
+                "No Anthropic API key found for --llm-provider=anthropic."
+            )
+        if self.llm_provider == "openai" and self._openai_client is None:
+            raise PlanningError(
+                "No OpenAI API key found for --llm-provider=openai."
+            )
+        if self.allow_fallback and self.llm_fallback_provider:
+            if self.llm_fallback_provider == "anthropic" and self._anthropic_client is None:
+                raise PlanningError(
+                    "Fallback provider requested as anthropic but ANTHROPIC_API_KEY is not set."
+                )
+            if self.llm_fallback_provider == "openai" and self._openai_client is None:
+                raise PlanningError(
+                    "Fallback provider requested as openai but OPENAI_API_KEY is not set."
+                )
+
+    def _primary_provider(self) -> Literal["anthropic", "openai"]:
+        if self.llm_provider == "auto":
+            if self._anthropic_client is not None:
+                return "anthropic"
+            return "openai"
+        return self.llm_provider
+
+    def _resolve_model(self, provider: str) -> str:
+        if provider == "openai" and self.model.startswith("claude-"):
+            return "gpt-4o-mini"
+        return self.model
+
+    def _provider_chain(self) -> list[str]:
+        chain: list[str] = [self._primary_provider()]
+        if self.allow_fallback and self.llm_fallback_provider:
+            fallback = self.llm_fallback_provider
+            if fallback != chain[0]:
+                chain.append(fallback)
+        return chain
+
+    def _prompt_fallback(self, error: Exception, fallback_provider: str) -> bool:
+        if not self.allow_human_fallback:
+            return False
+        try:
+            prompt = (
+                f"Planner call failed with {type(error).__name__}: {error} "
+                f"\nUse fallback provider '{fallback_provider}'? [y/N]: "
+            )
+            response = input(prompt).strip().lower()
+            return response in {"y", "yes"}
+        except EOFError:
+            return False
+
+    def _get_openai_tool_schema(self, schema: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": schema["name"],
+                "description": schema.get("description", ""),
+                "parameters": schema.get("input_schema", {}),
+            },
+        }
+
+    def _parse_openai_tool_payload(self, response: Any) -> dict[str, Any]:
+        message = response.choices[0].message
+        tool_calls = getattr(message, "tool_calls", None)
+        if not tool_calls:
+            raise PlanningError("No tool call found in OpenAI response")
+        call = tool_calls[0]
+        if getattr(call, "type", "function") != "function":
+            raise PlanningError("OpenAI tool call type is not function")
+        arguments = json.loads(call.function.arguments or "{}")
+        if "tasks" not in arguments:
+            raise PlanningError("OpenAI response missing 'tasks' in tool arguments")
+        return arguments
+
+    def _to_task_nodes(self, tool_input: dict[str, Any]) -> list[TaskNode]:
+        tasks = []
+        for task_data in tool_input.get("tasks", []):
+            raw_confidence = task_data.get("confidence_score")
+            if raw_confidence is not None:
+                confidence = max(CONFIDENCE_MIN, min(CONFIDENCE_MAX, float(raw_confidence)))
+            else:
+                confidence = None
+            tasks.append(
+                TaskNode(
+                    task_id=task_data["task_id"],
+                    description=task_data["description"],
+                    affected_files=task_data["affected_files"],
+                    dependencies=task_data.get("dependencies", []),
+                    confidence_score=confidence,
+                    status=TaskStatus.PENDING,
+                )
+            )
+        return tasks
 
     def decompose(
         self, directive: str, repo_index: RepoIndex, context: list[RetrievalResult]
@@ -119,19 +268,52 @@ class Planner:
             skill_context=skill_context,
         )
 
-        # Step 4: Call Claude API with tool-use
-        try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=4096,
-                tools=[self._get_tool_schema()],
-                messages=[{"role": "user", "content": prompt}],
-            )
-        except Exception as e:
-            raise PlanningError(f"Failed to call Claude API: {e}") from e
+        # Step 4: Call LLM API with tool-use
+        response = None
+        used_provider: str = ""
+        providers = self._provider_chain()
+        last_error: Exception | None = None
+        tool_schema = self._get_tool_schema()
+        for index, provider in enumerate(providers):
+            try:
+                if provider == "anthropic":
+                    if not self._anthropic_client:
+                        raise PlanningError("Anthropic client unavailable")
+                    response = self._anthropic_client.messages.create(
+                        model=self._resolve_model("anthropic"),
+                        max_tokens=4096,
+                        tools=[tool_schema],
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+                else:
+                    if not self._openai_client:
+                        raise PlanningError("OpenAI client unavailable")
+                    response = self._openai_client.chat.completions.create(
+                        model=self._resolve_model("openai"),
+                        max_tokens=4096,
+                        tools=[self._get_openai_tool_schema(tool_schema)],
+                        tool_choice={"type": "function", "function": {"name": "create_task_plan"}},
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+                used_provider = provider
+                break
+            except Exception as error:
+                last_error = error
+                if index >= len(providers) - 1:
+                    break
+                if not self.allow_fallback and not self.allow_human_fallback:
+                    break
+                if not self._prompt_fallback(error, providers[index + 1]):
+                    break
+
+        if response is None:
+            raise PlanningError(f"Failed to call planner LLM: {last_error}") from last_error
 
         # Step 5: Parse tool-use response
-        tasks = self._parse_tool_response(response)
+        if used_provider == "openai":
+            tasks = self._to_task_nodes(self._parse_openai_tool_payload(response))
+        else:
+            tasks = self._parse_tool_response(response)
 
         # Step 6: Validate file paths
         tasks = self._validate_file_paths(tasks, repo_index)

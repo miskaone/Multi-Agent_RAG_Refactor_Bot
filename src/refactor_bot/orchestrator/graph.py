@@ -145,6 +145,7 @@ def make_execute_node(
             return {
                 "errors": ["execute_node: no eligible pending task found"],
                 "diffs": [],
+                "current_task_index": -1,
             }
 
         updated_tree = list(state["task_tree"])
@@ -433,6 +434,11 @@ def make_decide_fn() -> Callable[[RefactorState], str]:
         task_tree = state["task_tree"]
         retry_counts = state["retry_counts"]
         max_retries = state["max_retries"]
+
+        # If there is no valid current task, do not retry in-place repeatedly.
+        # This can happen when planning produced zero tasks or state became desynced.
+        if not (0 <= current_idx < len(task_tree)):
+            return "abort"
 
         # Determine current task id for retry count lookup
         task_id = "unknown"

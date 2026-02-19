@@ -85,7 +85,16 @@ pip install -e ".[dev]"
 
 ### Configuration
 
-Set your API keys as environment variables:
+Set your API keys as environment variables, ideally via a `.env` file:
+
+```bash
+cp .env.example .env
+# edit .env and keep your keys secret
+```
+
+The app loads `.env` automatically when running.
+
+Alternatively, export directly in shell:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -123,6 +132,11 @@ python -m refactor_bot.cli "Migrate to TypeScript" ./my-project \
 | `--dry-run` | false | Print config and exit |
 | `--output-json` | false | Output results as JSON |
 | `--verbose` | false | Show stack traces on error |
+
+### Release and review
+
+- Changelog draft: [docs/CHANGELOG_DRAFT.md](docs/CHANGELOG_DRAFT.md)
+- PR checklist: [docs/PR_REVIEW_CHECKLIST.md](docs/PR_REVIEW_CHECKLIST.md)
 
 ### Exit Codes
 

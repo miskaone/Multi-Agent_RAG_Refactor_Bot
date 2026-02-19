@@ -16,6 +16,7 @@ dependencies = [
     "openai>=1.40.0",
     "chromadb>=0.6.4",
     "langgraph>=1.0.8",
+    "python-dotenv>=1.0.1",
 ]
 
 [project.optional-dependencies]
