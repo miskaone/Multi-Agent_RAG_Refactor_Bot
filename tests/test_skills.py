@@ -12,6 +12,12 @@ class DummyRepoIndex:
     is_react_project = False
 
 
+class DummyRepoTopology:
+    def __init__(self, is_react_project: bool = False, project_type: str | None = None):
+        self.is_react_project = is_react_project
+        self.project_type = project_type
+
+
 def _reset_registry_state():
     registry._skills = {}
     registry._active_skills = []
@@ -94,4 +100,30 @@ class TestSkillActivation:
             selected_skill_names=["vercel_react_best_practices"],
         )
         assert active
+        assert active[0].metadata.name == "vercel-react-best-practices"
+
+    def test_auto_activate_non_react_repo_without_directive_has_no_skills(self):
+        _reset_registry_state()
+        active = activate_skills_for_repo(
+            DummyRepoTopology(is_react_project=False, project_type=None),
+            directive="Refactor utility function",
+        )
+        assert active == []
+
+    def test_auto_activate_nextjs_repo_without_directive_activates_skill(self):
+        _reset_registry_state()
+        active = activate_skills_for_repo(
+            DummyRepoTopology(is_react_project=True, project_type="nextjs"),
+            directive="Refactor class component",
+        )
+        assert len(active) == 1
+        assert active[0].metadata.name == "vercel-react-best-practices"
+
+    def test_auto_activate_react_keyword_overrides_non_react_index(self):
+        _reset_registry_state()
+        active = activate_skills_for_repo(
+            DummyRepoTopology(is_react_project=False, project_type=None),
+            directive="Optimize React rendering performance",
+        )
+        assert len(active) == 1
         assert active[0].metadata.name == "vercel-react-best-practices"
