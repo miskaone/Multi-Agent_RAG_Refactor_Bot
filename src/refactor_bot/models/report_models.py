@@ -3,6 +3,8 @@
 from datetime import datetime
 from enum import Enum
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -79,14 +81,21 @@ class PRRiskLevel(str, Enum):
     CRITICAL = "critical"
 
 
+PR_ARTIFACT_SCHEMA_VERSION = "1.0.0"
+
+
 class PRArtifact(BaseModel):
     model_config = ConfigDict(frozen=False)
 
     title: str
     summary: str
+    output_format: Literal["json", "markdown"] = "json"
+    schema_version: str = PR_ARTIFACT_SCHEMA_VERSION
     risk: PRRiskLevel
     changed_files: list[str] = Field(default_factory=list)
     rollback_files: list[str] = Field(default_factory=list)
+    reviewer_checklist: list[str] = Field(default_factory=list)
+    rollback_instructions: list[str] = Field(default_factory=list)
     task_count: int = 0
     completed_task_count: int = 0
     skipped_task_count: int = 0
@@ -113,4 +122,5 @@ __all__ = [
     "SkillMetadata",
     "PRRiskLevel",
     "PRArtifact",
+    "PR_ARTIFACT_SCHEMA_VERSION",
 ]
