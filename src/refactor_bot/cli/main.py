@@ -9,6 +9,7 @@ from pathlib import Path
 
 from refactor_bot.agents.exceptions import AgentError
 from refactor_bot.orchestrator.exceptions import OrchestratorError
+from refactor_bot.models import PRArtifact, PRRiskLevel, AuditReport, TestReport, TaskStatus
 
 load_dotenv()
 
@@ -36,6 +37,7 @@ _SAFE_CONFIG_KEYS = frozenset({
     "vector_store_dir", "timeout", "verbose", "dry_run", "output_json",
     "skills", "allow_no_runner_pass", "llm_provider", "llm_fallback_provider",
     "allow_llm_fallback", "allow_no_runner_pass", "interactive_fallback",
+    "output_pr_artifact",
 })
 
 
@@ -120,6 +122,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Allow manual fallback to alternate provider when primary provider fails"
+        ),
+    )
+    parser.add_argument(
+        "--output-pr-artifact",
+        type=str,
+        default="",
+        help=(
+            "Write PR artifact JSON to this path (for example: ./artifacts/pr_artifact.json)"
         ),
     )
     return parser
@@ -241,6 +251,92 @@ def format_result_json(result: dict) -> str:
     return json.dumps(prepared, indent=2, default=str)
 
 
+def _build_pr_artifact(directive: str, result: dict) -> PRArtifact:
+    """Build a minimal PR-ready artifact from orchestrator result."""
+    task_tree = result.get("task_tree", [])
+    diffs = result.get("diffs", [])
+    audit = result.get("audit_results")
+    tests = result.get("test_results")
+    errors = result.get("errors", [])
+
+    def _file_path(diff_item):
+        if hasattr(diff_item, "file_path"):
+            return getattr(diff_item, "file_path")
+        if hasattr(diff_item, "get"):
+            return diff_item.get("file_path")
+        return None
+
+    changed_files = sorted({path for path in (_file_path(diff) for diff in diffs) if path is not None})
+    completed_count = 0
+    skipped_count = 0
+    failed_count = 0
+
+    for task in task_tree:
+        status = task.status
+        if status is None and isinstance(task, dict):
+            status = task.get("status")
+        if isinstance(status, str):
+            try:
+                status = TaskStatus(status)
+            except ValueError:
+                status = status
+        if status == TaskStatus.COMPLETED:
+            completed_count += 1
+        elif status == TaskStatus.SKIPPED:
+            skipped_count += 1
+        elif status == TaskStatus.FAILED:
+            failed_count += 1
+
+    audit_passed = bool(audit.passed) if isinstance(audit, AuditReport) else False
+    tests_passed = bool(tests.passed) if isinstance(tests, TestReport) else False
+    low_trust_pass = bool(getattr(tests, "low_trust_pass", False)) if isinstance(tests, TestReport) else False
+
+    if any(str(err).startswith(ABORT_PREFIX) for err in errors):
+        risk = PRRiskLevel.HIGH
+    elif not audit_passed or not tests_passed:
+        risk = PRRiskLevel.HIGH
+    elif low_trust_pass:
+        risk = PRRiskLevel.MEDIUM
+    elif failed_count > 0 or skipped_count > 0:
+        risk = PRRiskLevel.MEDIUM
+    else:
+        risk = PRRiskLevel.LOW
+
+    summary = (
+        f"directive='{directive}', tasks={len(task_tree)} "
+        f"completed={completed_count}, skipped={skipped_count}, failed={failed_count}, "
+        f"changed_files={len(changed_files)}, audit_passed={audit_passed}, "
+        f"tests_passed={tests_passed}, low_trust={low_trust_pass}"
+    )
+
+    rollback_files = [f for f in changed_files]
+
+    return PRArtifact(
+        title=f"Refactor: {directive[:72]}",
+        summary=summary,
+        risk=risk,
+        changed_files=changed_files,
+        rollback_files=rollback_files,
+        task_count=len(task_tree),
+        completed_task_count=completed_count,
+        skipped_task_count=skipped_count,
+        failed_task_count=failed_count,
+        audit_passed=audit_passed,
+        tests_passed=tests_passed,
+        low_trust_pass=low_trust_pass,
+    )
+
+
+def _write_pr_artifact(path: str, artifact: PRArtifact) -> None:
+    """Serialize and write PRArtifact to disk."""
+    artifact_path = Path(path).expanduser().resolve()
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(
+        format_result_json(artifact.model_dump()),
+        encoding="utf-8",
+    )
+
+
 def print_result_human(result: dict) -> None:
     """Print results in human-readable format."""
     print(f"\n{'='*60}")
@@ -343,6 +439,7 @@ def main(argv: list[str] | None = None) -> int:
         "output_json": args.output_json,
         "skills": args.skills,
         "allow_no_runner_pass": args.allow_no_runner_pass,
+        "output_pr_artifact": args.output_pr_artifact,
     }
 
     if args.dry_run:
@@ -373,6 +470,21 @@ def main(argv: list[str] | None = None) -> int:
             print(format_result_json(result))
         else:
             print_result_human(result)
+
+        artifact_path = args.output_pr_artifact
+        if artifact_path:
+            try:
+                artifact = _build_pr_artifact(args.directive, result)
+                _write_pr_artifact(artifact_path, artifact)
+                if args.verbose:
+                    print(f"PR artifact written: {artifact_path}")
+            except Exception as exc:
+                return _handle_error(
+                    "Failed to write PR artifact",
+                    exc,
+                    args.verbose,
+                    EXIT_UNEXPECTED,
+                )
 
         return determine_exit_code(result)
 
