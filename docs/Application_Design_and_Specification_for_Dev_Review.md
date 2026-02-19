@@ -16,7 +16,7 @@
 ## Non-Goals
 
 - Automatic deployment or runtime CI/CD integration.
-- Automatic PR or artifact generation (not implemented in code despite PRD references to an explicit PR generator output).
+- Automatic PR or artifact generation support via `--output-pr-artifact` (JSON or markdown output formats).
 - Cross-language codebase refactoring outside JS/TS/TSX/JSX.
 - GitHub/GitLab diff comment publishing.
 
@@ -130,6 +130,8 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
   - `--output-json`
   - `--verbose`
   - `--skills` (comma-separated skill names or `auto`; default: `auto`)
+  - `--output-pr-artifact` (optional artifact path)
+  - `--output-pr-artifact-format` (`json` | `markdown`)
 - Exit code mapping:
   - `0` success
   - `1` invalid input
@@ -268,16 +270,16 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
 
 ## Reviewed Gaps vs PRD/Docs
 
-- PRD claims full PR output and artifact generation features (title, summary, risk, rollback files). PR flow includes a PR artifact JSON output, but richer PR workflow content/format is still partially out of scope.
+- PRD claims full PR output and artifact generation features (title, summary, risk, rollback files). Current implementation now includes structured PR artifact output in JSON and markdown templates, plus checklist and rollback guidance.
 - PRD references up to 57 rules across all React categories; **full Vercel React Best Practices skill (57 rules) is now loaded via Skills framework** with parser-backed rules and canonical AGENTS.md context.
-- PRD claims "skip/retry/abort" branching, and retry/abort/skip behavior is now present; remaining gap is operational policy for when to permit skip as a fallback action.
+- PRD claims "skip/retry/abort" branching, and retry/abort/skip behavior is now present; skip policy is implemented and configurable via run outcome.
 - Abort threshold is `0.85` in code and docs state mixed target thresholds (`85%`, `95%` in different sections).
 
 ## Dev Review Findings
 
 ## Critical
 
-- `src/refactor_bot/cli/main.py`: `--output-pr-artifact` writes JSON summary but PRD-style richer PR payload contract is still partial (e.g., rollback instruction object and template output).
+- `src/refactor_bot/cli/main.py`: `--output-pr-artifact` supports JSON and markdown schema-backed PR artifacts with checklist + rollback guidance.
 
 ## Warning
 
@@ -288,7 +290,7 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
 
 ## Final Readiness Summary (for reviewer sign-off)
 
-- Architecture: `READY` with one non-blocking behavior gap (enhanced PR artifact contract scope).
+- Architecture: `READY`.
 - Skill system: `READY` with parser-backed rules, canonical Vercel context, activation controls, and compatibility aliases.
 - Regression confidence: `PASS` with the documented closure command and all known rollout checks passing.
 - Security posture: `MODERATE` due to no-runner fallback requiring explicit operator approval flag.
@@ -318,8 +320,4 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
 ### Archived (Completed in v0.2.0)
 - All P0 items from previous spec (skip_node decision, no-runner policy, Skills integration, etc.) are now **DONE**.
 
-### Remaining Work for v0.2.1
-- Finalize PR generator workflow:
-  - Expand `PRArtifact` schema and template output.
-  - Add rollback/instructions fields.
-  - Add optional `--output-pr-artifact-format` and docs for CI consumers.
+- All v0.2.x PR artifact workflow items are now implemented.
