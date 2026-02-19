@@ -97,6 +97,37 @@ def test_validator_no_package_json(tmp_path):
     assert result is None
 
 
+@patch("refactor_bot.agents.test_validator.openai.OpenAI")
+@patch("refactor_bot.agents.test_validator.Anthropic")
+def test_validator_prefers_anthropic_in_auto_when_available(
+    mock_anthropic, mock_openai, monkeypatch
+):
+    """Validator auto provider prefers Anthropic when ANTHROPIC_API_KEY is present."""
+    mock_anthropic.return_value = object()
+    mock_openai.return_value = object()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+
+    validator = TestValidator(api_key=None)
+    assert validator._primary_provider() == "anthropic"
+
+
+@patch("refactor_bot.agents.test_validator.openai.OpenAI")
+@patch("refactor_bot.agents.test_validator.Anthropic")
+def test_validator_openai_provider_chain_with_fallback(mock_anthropic, mock_openai):
+    """OpenAI primary with OpenAI fallback config should not duplicate provider."""
+    mock_anthropic.return_value = None
+    mock_openai.return_value = object()
+
+    validator = TestValidator(
+        api_key="openai-key",
+        llm_provider="openai",
+        llm_fallback_provider="openai",
+        allow_fallback=True,
+    )
+    assert validator._provider_chain() == ["openai"]
+
+
 # ---------------------------------------------------------------------------
 # _run_tests tests
 # ---------------------------------------------------------------------------

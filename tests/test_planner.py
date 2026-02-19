@@ -122,6 +122,18 @@ class TestPlannerInitialization:
         planner = Planner(api_key="test-key-123")
         assert planner is not None
 
+    @patch("refactor_bot.agents.planner.openai.OpenAI")
+    @patch("refactor_bot.agents.planner.Anthropic")
+    def test_planner_init_prefers_anthropic_in_auto(self, mock_anthropic_class, mock_openai_class, monkeypatch):
+        """Auto mode prefers Anthropic when both keys are available."""
+        mock_anthropic_class.return_value = object()
+        mock_openai_class.return_value = object()
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+        monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+
+        planner = Planner()
+        assert planner._primary_provider() == "anthropic"
+
     def test_planner_init_with_env_var(self, monkeypatch):
         """Test Planner initialization falls back to ANTHROPIC_API_KEY env var."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "env-key-456")
@@ -139,6 +151,35 @@ class TestPlannerInitialization:
         """Test Planner initialization with custom model."""
         planner = Planner(api_key="test-key", model="claude-opus-4-6")
         assert planner is not None
+
+    @patch("refactor_bot.agents.planner.openai.OpenAI")
+    @patch("refactor_bot.agents.planner.Anthropic")
+    def test_planner_init_without_anthropic_key_uses_openai(self, mock_anthropic_class, mock_openai_class, monkeypatch):
+        """Auto mode should fall back to OpenAI when Anthropic key is not set."""
+        mock_anthropic_class.return_value = None
+        mock_openai_client = object()
+        mock_openai_class.return_value = mock_openai_client
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+
+        planner = Planner(api_key=None)
+        assert planner._primary_provider() == "openai"
+
+    @patch("refactor_bot.agents.planner.openai.OpenAI")
+    @patch("refactor_bot.agents.planner.Anthropic")
+    def test_planner_provider_chain_with_fallback(
+        self, mock_anthropic_class, mock_openai_class
+    ):
+        """Configured fallback should be appended when enabled."""
+        mock_anthropic_class.return_value = object()
+        mock_openai_class.return_value = object()
+        planner = Planner(
+            api_key="test-key",
+            llm_provider="anthropic",
+            llm_fallback_provider="openai",
+            allow_fallback=True,
+        )
+        assert planner._provider_chain() == ["anthropic", "openai"]
 
 
 class TestPlannerDecompose:

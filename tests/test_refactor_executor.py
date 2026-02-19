@@ -108,6 +108,19 @@ def test_init_with_api_key():
     assert ex.api_key == "sk-test"
 
 
+@patch("refactor_bot.agents.refactor_executor.openai.OpenAI")
+@patch("refactor_bot.agents.refactor_executor.Anthropic")
+def test_init_prefers_anthropic_in_auto(mock_anthropic, mock_openai, monkeypatch):
+    """Auto mode prefers Anthropic when both keys are present."""
+    mock_anthropic.return_value = object()
+    mock_openai.return_value = object()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+
+    ex = RefactorExecutor(api_key=None)
+    assert ex._primary_provider() == "anthropic"
+
+
 def test_init_no_api_key_raises():
     """Executor raises AgentError when no key provided and env var unset."""
     import os
@@ -116,6 +129,38 @@ def test_init_no_api_key_raises():
     with patch.dict("os.environ", env, clear=True):
         with pytest.raises(AgentError, match="No Anthropic API key"):
             RefactorExecutor(api_key=None)
+
+
+@patch("refactor_bot.agents.refactor_executor.openai.OpenAI")
+@patch("refactor_bot.agents.refactor_executor.Anthropic")
+def test_executor_provider_chain_with_fallback(mock_anthropic, mock_openai):
+    """Configured fallback provider should be included in chain when enabled."""
+    mock_anthropic.return_value = object()
+    mock_openai.return_value = object()
+
+    ex = RefactorExecutor(
+        api_key="test-key",
+        llm_provider="anthropic",
+        llm_fallback_provider="openai",
+        allow_fallback=True,
+    )
+    assert ex._provider_chain() == ["anthropic", "openai"]
+
+
+@patch("refactor_bot.agents.refactor_executor.openai.OpenAI")
+@patch("refactor_bot.agents.refactor_executor.Anthropic")
+def test_executor_provider_chain_omits_duplicate_fallback(mock_anthropic, mock_openai):
+    """Fallback identical to primary should not duplicate provider in chain."""
+    mock_anthropic.return_value = object()
+    mock_openai.return_value = object()
+
+    ex = RefactorExecutor(
+        api_key="test-key",
+        llm_provider="anthropic",
+        llm_fallback_provider="anthropic",
+        allow_fallback=True,
+    )
+    assert ex._provider_chain() == ["anthropic"]
 
 
 # --- _read_source_files tests ---
