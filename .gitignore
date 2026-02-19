@@ -74,3 +74,6 @@ uv.lock
 .workflow/
 tmp/
 temp/
+
+# Runtime/local state
+data/
