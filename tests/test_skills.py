@@ -37,6 +37,17 @@ def test_vercel_rules_parser_reads_quick_reference(tmp_path: Path):
     assert parsed[0].category in {"Eliminating Waterfalls", "Bundle Size Optimization"}
 
 
+def test_public_model_exports_remain_compatible():
+    from refactor_bot.models.report_models import RefactorRule as LegacyRefactorRule
+    from refactor_bot.models.skill_models import RefactorRule as CoreRefactorRule
+    from refactor_bot.models import RefactorRule as PackageRefactorRule
+    from refactor_bot.models import SkillMetadata
+
+    assert LegacyRefactorRule is CoreRefactorRule
+    assert PackageRefactorRule is CoreRefactorRule
+    assert isinstance(SkillMetadata(name="x", version="1", description="y", impact_levels=["LOW"], categories=["c"], triggers=["t"]), SkillMetadata)
+
+
 def test_vercel_skill_load_from_disk_uses_prompt_and_rules(tmp_path: Path):
     _reset_registry_state()
 
