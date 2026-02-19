@@ -1,5 +1,16 @@
 # Changelog (Draft)
 
+## 2026-02-19 (Skills rollout closeout)
+
+- Added consolidated Skills release and risk artifacts:
+  - `docs/SKILLS_ROLLOUT_RELEASE_NOTES_v0.2.0.md`
+  - `docs/POST_RELEASE_RISKS_AND_FOLLOWUPS.md`
+  - `docs/PR_BODY_SKILLS_ROLLOUT_FINAL.md`
+- Marked full Skills rollout readiness as complete after merged PR sequence:
+  - #1, #2, #4, #5, #16, #21, #22, #24, #27
+- Closed all rollout and readiness issues (#6–#19 where applicable) after final verification.
+- Added this changelog consolidation to support docs-first handoff.
+
 ## 2026-02-19
 
 ### Environment Security and Configuration
