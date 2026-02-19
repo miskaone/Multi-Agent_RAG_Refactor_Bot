@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List
 
 from .base import Skill
@@ -31,7 +32,14 @@ class SkillRegistry:
         try:
             module = importlib.import_module(f"refactor_bot.skills.{package_name}")
             if hasattr(module, "skill"):
-                self.register(module.skill)
+                skill = module.skill
+                try:
+                    package_dir = Path(module.__file__).parent if module.__file__ else None
+                    if package_dir is not None:
+                        skill.load_from_disk(package_dir)
+                except Exception as e:
+                    print(f"[SkillRegistry] Skill load failed for {package_name}: {e}")
+                self.register(skill)
         except Exception as e:
             print(f"[SkillRegistry] Failed to register {package_name}: {e}")
 
