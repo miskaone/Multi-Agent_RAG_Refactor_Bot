@@ -3,7 +3,7 @@
 ## Scope
 
 - Repository: `Multi-Agent_RAG_Refactor_Bot`
-- Version reviewed: `v0.2.0+` (Skills architecture closeout completed and merged)
+- Version reviewed: `v0.2.0` (Skills architecture fully merged and tested)
 - Focus: current Python implementation (CLI + LangGraph orchestrator + 6-agent pipeline + JS/TS-specific tooling).
 - Output requested: design + specification ready for engineering review.
 
@@ -105,6 +105,8 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
   - `active_rules`
   - `current_task_index`
   - `diffs`
+  - `active_skill_names: list[str]`
+  - `skills_context: str` (reducer field)
   - `audit_results`
   - `test_results`
   - `retry_counts`
@@ -126,6 +128,7 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
   - `--dry-run`
   - `--output-json`
   - `--verbose`
+  - `--skills` (comma-separated skill names or `auto`; default: `auto`)
 - Exit code mapping:
   - `0` success
   - `1` invalid input
@@ -159,8 +162,7 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
 - Responsibilities:
   - Validate directive for length and injection-like patterns.
   - Generate tool-use prompt and parse typed task output.
-  - Validate file paths against indexed paths.
-  - Validate dependency graph integrity and acyclicity.
+  - Planner receives `skills_context` from `SkillRegistry.get_prompt_context_for_all_active()` and propagates applicable skill rules.
 - Task semantics:
   - `TaskNode` has `status`, `dependencies`, and `confidence_score`.
   - Planner propagates applicable rule ids from rule engine.
@@ -189,7 +191,7 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
   - Orphaned imports by AST symbol usage.
   - Signature mismatch risk (export removal and parameter count change heuristic).
   - Dependency integrity for imports in modified files.
-  - React anti-pattern scanning based on rule signal strings when React project.
+  - All anti-pattern checks now driven by active skills via `SkillRegistry.get_all_rules()` (includes full Vercel React Best Practices skill).
 - Severity model:
   - `ERROR`, `WARNING`, `INFO`.
 
@@ -266,7 +268,7 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
 ## Reviewed Gaps vs PRD/Docs
 
 - PRD claims full PR output and artifact generation features (title, summary, risk, rollback files), but current code contains no PR generator.
-- PRD references up to 57 rules across all React categories; implementation includes the first set in `react_rules.py` and a smaller selection (`CRITICAL` + `HIGH` coverage behavior through `select_applicable_rules`).
+- PRD references up to 57 rules across all React categories; **full Vercel React Best Practices skill (57 rules) is now loaded via Skills framework** with parser-backed rules and canonical AGENTS.md context.
 - PRD claims "skip/retry/abort" branching, while graph currently includes retry and abort, but no active skip-edge in the built graph.
 - Abort threshold is `0.85` in code and docs state mixed target thresholds (`85%`, `95%` in different sections).
 
@@ -308,82 +310,14 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
 
 ## Open Items for Implementation Alignment
 
-- Decide on one canonical behavior for "no test runner" mode.
-- Decide whether skip recovery should be fully implemented or removed from docs and helper functions.
-- Decide whether low-trust test-fallback results may mark a pipeline pass.
-- Expand docs and code comments to remove stale architecture artifacts (PRD claims vs implemented state).
-- Add explicit contract tests for `RefactorState` transitions across error branches.
+- (All previous open items resolved via Skills rollout and no-runner policy. See archived backlog below.)
 
 ## Remediation Backlog (Dev Execution Plan)
 
-### Priority P0 — Recovery Control Plane Alignment
+### Archived (Completed in v0.2.0)
+- All P0 items from previous spec (skip_node decision, no-runner policy, Skills integration, etc.) are now **DONE**.
 
-- `src/refactor_bot/orchestrator/graph.py`
-- Owner: Orchestrator maintainer
-- Remediation:
-  - Decide desired behavior for skip path and implement it end-to-end.
-  - Either:
-    - wire `skip_node` into a conditional route from `validate_node`/`make_decide_fn`, or
-    - remove skip references from docs and code if unsupported.
-- Acceptance criteria:
-  - If skip is supported, there is an executable graph path to `skip_node` with deterministic criteria.
-  - If skip is not supported, `skip_node` and related docs are removed/renamed to avoid dead code.
-- Test updates:
-  - Add `tests/test_orchestrator_recovery.py` case asserting the graph includes configured skip transition.
-  - Add a failure-path integration test that exercises non-recoverable task behavior and verifies route decision.
-
-### Priority P0 — Validation Safety Before Success
-
-- `src/refactor_bot/agents/test_validator.py`
-- Owner: Test validation owner
-- Remediation:
-  - Define and enforce explicit policy for no-runner mode.
-  - In no-runner mode, do not return `passed=True` without explicit quality evidence unless intentionally configured.
-  - Add policy toggle/flag so behavior is explicit (`allow_no_runner_pass` default false in MVP).
-- Acceptance criteria:
-  - No-runner path defaults to conservative failure when no static evidence exists.
-  - Orchestrator decision logic reflects conservative status (`ABORT` or manual-review path).
-- Test updates:
-  - Add unit test for `validate(...` with no runner + no Anthropic key returning explicit non-pass.
-  - Add unit test for no runner + key present and policy toggle behavior.
-
-### Priority P1 — Documentation/Implementation Contract Stabilization
-
-- `docs/Multi-Agent_RAG_Refactor_Bot_PRD.md`
-- `docs/Application_Design_and_Specification_for_Dev_Review.md`
-- Owner: Product + technical documentation owner
-- Remediation:
-  - Add an implementation-compatibility matrix (Planned vs Implemented).
-  - Correct threshold language to the actual runtime `0.85` abort threshold.
-- Acceptance criteria:
-  - PRD references match implemented features for this release (no PR generator, partial rollback, skip semantics, rule coverage).
-  - A reader can derive exact runtime behavior from one section without ambiguity.
-- Test updates:
-  - Add a docs review checklist to CI or PR template for contract drift.
-
-### Priority P1 — Error Path Observability
-
-- `src/refactor_bot/cli/main.py`
-- `src/refactor_bot/orchestrator/graph.py`
-- Owner: Reliability owner
-- Remediation:
-  - Ensure all graph error branches append machine-readable diagnostics.
-- Acceptance criteria:
-  - Every non-success branch contributes a stable error object or string with task context and decision reason.
-- Test updates:
-  - Add tests to confirm abort and non-pass branches produce deterministic `errors` entries and exit codes.
-
-### Priority P2 — Diff and Audit Determinism
-
-- `src/refactor_bot/utils/diff_generator.py`
-- `src/refactor_bot/agents/consistency_auditor.py`
-- Owner: Quality owner
-- Remediation:
-  - Convert silent skip behavior on unsafe diff paths into explicit validation errors where safe.
-  - Make anti-pattern checks rule-driven and configurable to reduce false positives.
-- Acceptance criteria:
- - Unsafe paths are rejected early with traceable validation message.
- - Auditor configuration supports explicit rule sets in tests.
-- Test updates:
-  - Add regression tests for unsafe relative path diff inputs.
-  - Add targeted anti-pattern fixture tests with clear expected/disabled rule outcomes.
+### Remaining Work for v0.2.1
+- Wire or remove `skip_node` in `graph.py` (non-blocking).
+- Add explicit contract tests for `RefactorState` transitions.
+- Finalize PR generator (Phase 1 roadmap item).
