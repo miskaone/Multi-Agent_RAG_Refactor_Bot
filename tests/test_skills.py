@@ -65,6 +65,23 @@ def test_vercel_skill_load_from_disk_uses_prompt_and_rules(tmp_path: Path):
     assert parsed[0].rule_id == "async-defer-await"
 
 
+def test_vercel_skill_docs_are_not_placeholders():
+    package_dir = Path("src/refactor_bot/skills/vercel_react_best_practices")
+    skill_text = (package_dir / "SKILL.md").read_text(encoding="utf-8")
+    agents_text = (package_dir / "AGENTS.md").read_text(encoding="utf-8")
+
+    placeholder_markers = [
+        "Copy the full SKILL.md content",
+        "Copy the full AGENTS.md content",
+        "for now you can leave this as a placeholder",
+    ]
+
+    combined = skill_text + "\n" + agents_text
+    assert not any(marker in combined for marker in placeholder_markers)
+    assert "Vercel React Best Practices" in skill_text
+    assert "# React Best Practices" in agents_text
+
+
 class TestSkillActivation:
     def test_activate_explicit_skill_name(self):
         _reset_registry_state()
