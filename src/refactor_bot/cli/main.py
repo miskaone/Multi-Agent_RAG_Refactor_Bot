@@ -1,5 +1,6 @@
 """CLI entry point for the Multi-Agent RAG Refactor Bot."""
 import argparse
+from dotenv import load_dotenv
 import json
 import os
 import sys
@@ -8,6 +9,8 @@ from pathlib import Path
 
 from refactor_bot.agents.exceptions import AgentError
 from refactor_bot.orchestrator.exceptions import OrchestratorError
+
+load_dotenv()
 
 # Exit codes (L010)
 EXIT_SUCCESS = 0
@@ -31,7 +34,8 @@ ABORT_PREFIX = "ABORT:"
 _SAFE_CONFIG_KEYS = frozenset({
     "directive", "repo_path", "max_retries", "model",
     "vector_store_dir", "timeout", "verbose", "dry_run", "output_json",
-    "skills", "allow_no_runner_pass",
+    "skills", "allow_no_runner_pass", "llm_provider", "llm_fallback_provider",
+    "allow_llm_fallback", "allow_no_runner_pass", "interactive_fallback",
 })
 
 
@@ -91,6 +95,33 @@ def build_parser() -> argparse.ArgumentParser:
             "(low-trust, default blocks pipeline)"
         ),
     )
+    parser.add_argument(
+        "--llm-provider",
+        type=str,
+        default="auto",
+        choices=("auto", "anthropic", "openai"),
+        help=(
+            "LLM provider for Planner/Executor/Validator: "
+            "auto (default), anthropic, or openai"
+        ),
+    )
+    parser.add_argument(
+        "--llm-fallback-provider",
+        type=str,
+        default="",
+        choices=("", "anthropic", "openai"),
+        help=(
+            "Optional explicit fallback provider when primary provider fails "
+            "(for example: openai)"
+        ),
+    )
+    parser.add_argument(
+        "--allow-llm-fallback",
+        action="store_true",
+        help=(
+            "Allow manual fallback to alternate provider when primary provider fails"
+        ),
+    )
     return parser
 
 
@@ -138,6 +169,14 @@ def create_agents(args: argparse.Namespace) -> dict:
     # API keys from environment (agents also fall back to env internally)
     api_key = os.getenv("ANTHROPIC_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
+    llm_provider = args.llm_provider
+    llm_fallback_provider = (
+        args.llm_fallback_provider or None
+        if getattr(args, "llm_fallback_provider", "")
+        else None
+    )
+    allow_llm_fallback = bool(getattr(args, "allow_llm_fallback", False))
+    interactive_fallback = sys.stdin.isatty() and not args.dry_run
 
     embedding_service = EmbeddingService(api_key=openai_key)
     vector_store = VectorStore(persist_dir=args.vector_store_dir)
@@ -145,14 +184,33 @@ def create_agents(args: argparse.Namespace) -> dict:
         embedding_service=embedding_service, vector_store=vector_store
     )
     indexer = RepoIndexer()
-    planner = Planner(api_key=api_key, model=args.model)
-    executor = RefactorExecutor(api_key=api_key, model=args.model)
+    planner = Planner(
+        api_key=api_key,
+        model=args.model,
+        llm_provider=llm_provider,
+        llm_fallback_provider=llm_fallback_provider,
+        allow_fallback=allow_llm_fallback,
+        allow_human_fallback=interactive_fallback,
+    )
+    executor = RefactorExecutor(
+        api_key=api_key,
+        model=args.model,
+        llm_provider=llm_provider,
+        llm_fallback_provider=llm_fallback_provider,
+        allow_fallback=allow_llm_fallback,
+        allow_human_fallback=interactive_fallback,
+    )
     auditor = ConsistencyAuditor()
     validator = TestValidator(
         api_key=api_key,
+        openai_api_key=openai_key,
         model=args.model,
         timeout_seconds=args.timeout,
         allow_no_runner_pass=args.allow_no_runner_pass,
+        llm_provider=llm_provider,
+        llm_fallback_provider=llm_fallback_provider,
+        allow_fallback=allow_llm_fallback,
+        allow_human_fallback=interactive_fallback,
     )
 
     return {

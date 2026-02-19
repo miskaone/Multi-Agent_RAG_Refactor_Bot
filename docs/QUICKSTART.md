@@ -20,6 +20,14 @@ uv sync
 ## 2. Configure API Keys
 
 ```bash
+cp .env.example .env
+# edit .env with your real keys
+```
+
+The app automatically loads `.env` at startup.
+
+```bash
+# optional manual export
 export ANTHROPIC_API_KEY="sk-ant-..."
 export OPENAI_API_KEY="sk-..."
 ```
@@ -103,3 +111,8 @@ The pipeline aborted because test pass rate dropped below 85% or retries were ex
 ```bash
 python -m refactor_bot.cli "..." ./repo --verbose
 ```
+
+## Release notes and review
+
+- Changelog draft: [CHANGELOG_DRAFT.md](CHANGELOG_DRAFT.md)
+- PR review checklist: [PR_REVIEW_CHECKLIST.md](PR_REVIEW_CHECKLIST.md)
