@@ -175,6 +175,27 @@ class TestCreateAgents:
             "indexer", "retriever", "planner", "executor", "auditor", "validator",
         }
 
+    def test_create_agents_forwards_provider_configuration(self, patched_agents):
+        args = build_parser().parse_args(
+            [
+                "d",
+                "/tmp",
+                "--llm-provider",
+                "anthropic",
+                "--llm-fallback-provider",
+                "openai",
+                "--allow-llm-fallback",
+            ]
+        )
+        create_agents(args)
+
+        for mock_cls in (patched_agents["plan"], patched_agents["exec"], patched_agents["val"]):
+            kwargs = mock_cls.call_args.kwargs
+            assert kwargs.get("llm_provider") == "anthropic"
+            assert kwargs.get("llm_fallback_provider") == "openai"
+            assert kwargs.get("allow_fallback") is True
+            assert kwargs.get("allow_human_fallback") is False
+
     def test_create_agents_reads_env_api_key(self, patched_agents, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test123")
         args = build_parser().parse_args(["d", "/tmp"])
@@ -187,6 +208,15 @@ class TestCreateAgents:
         args = build_parser().parse_args(["d", "/tmp"])
         create_agents(args)
         assert patched_agents["emb"].call_args.kwargs.get("api_key") == "ok-test456"
+
+    def test_create_agents_enables_human_fallback_on_tty(self, patched_agents):
+        with patch("refactor_bot.cli.main.sys.stdin.isatty", return_value=True):
+            args = build_parser().parse_args(["d", "/tmp"])
+            create_agents(args)
+
+            for mock_cls in (patched_agents["plan"], patched_agents["exec"], patched_agents["val"]):
+                kwargs = mock_cls.call_args.kwargs
+                assert kwargs.get("allow_human_fallback") is True
 
 
 # ---------------------------------------------------------------------------
