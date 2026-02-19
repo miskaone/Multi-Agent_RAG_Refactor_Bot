@@ -2,7 +2,7 @@
 
 **Version:** 1.0 (for v0.2.0+)  
 **Date:** February 18, 2026  
-**Status:** Ready for implementation after v0.1.1
+**Status:** Production-ready (v0.2.0+)
 
 ## Overview
 This document defines the **Skills-based architecture** that replaces the legacy `rules/` directory and hard-coded React best practices.
@@ -52,14 +52,11 @@ src/refactor_bot/
 
 ## Migration Path
 
-- Move existing `react_rules.py` content into the new Vercel skill folder
-- Keep legacy `rules/` shim for one release
+- Legacy `rules/react_rules.py` remains as an implementation fallback during v0.2.x rollout.
+- New skills are now active for repository-aware pipeline behavior.
 
 ## Usage
 
 ```bash
 python -m refactor_bot.cli "Convert class components to hooks" ./my-app --skills vercel-react-best-practices
 ```
-
-Full implementation guide inside this file after you add the code.
-

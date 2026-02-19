@@ -125,9 +125,13 @@ def test_init_no_api_key_raises():
     """Executor raises AgentError when no key provided and env var unset."""
     import os
 
-    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in {"ANTHROPIC_API_KEY", "OPENAI_API_KEY"}
+    }
     with patch.dict("os.environ", env, clear=True):
-        with pytest.raises(AgentError, match="No Anthropic API key"):
+        with pytest.raises(AgentError, match="No Anthropic or OpenAI API key found"):
             RefactorExecutor(api_key=None)
 
 

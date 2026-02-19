@@ -143,6 +143,7 @@ class TestPlannerInitialization:
     def test_planner_init_missing_api_key_raises_agent_error(self, monkeypatch):
         """Test that missing API key raises AgentError."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         with pytest.raises(AgentError) as exc_info:
             Planner(api_key=None)
         assert "api key" in str(exc_info.value).lower()

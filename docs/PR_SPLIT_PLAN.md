@@ -1,6 +1,6 @@
 # Release Notes — Skills Architecture Delivery
 
-## 2026-02-18 (Merged PR Batch)
+## 2026-02-18 (Merged PR Batch + in-flight follow-up)
 
 ### Added
 - Core Skills platform: `Skill` protocol, registry, manager, and model support.
@@ -23,6 +23,9 @@
   - `docs/Developer Handoff Plan Closing All Gaps for Multi-Agent RAG Refactor Bot v0.1.1.md`
 
 ### Known Risks / Follow-ups
-- `src/refactor_bot/skills/vercel_react_best_practices/rules.py` remains a placeholder and should be populated before production rollout.
-- Vercel SKILL/AGENTS docs should be replaced with authoritative source content.
-- Downstream gating must distinguish `low_trust_pass` from full-pass test validation.
+- Downstream policy for strict automation (`low_trust_pass`) still requires final rollout guidance.
+- Rule mapping depends on stable SKILL quick-reference IDs and parser tolerance for future Vercel updates.
+
+### Current Follow-up Status
+- `src/refactor_bot/skills/vercel_react_best_practices/rules.py` is now parser-backed (no placeholder behavior).
+- Vercel `SKILL.md` and `AGENTS.md` are sourced from the canonical documentation.

@@ -306,3 +306,18 @@ class TestMainHappyPath:
         mock_graph.invoke.return_value = _mock_result()
         mock_build.return_value = mock_graph
         assert main(["test directive", str(tmp_path)]) == EXIT_SUCCESS
+
+    @patch("refactor_bot.orchestrator.graph.build_graph")
+    @patch("refactor_bot.cli.main.create_agents")
+    def test_main_passes_selected_skills(self, mock_create, mock_build, tmp_path):
+        mock_create.return_value = _mock_agents()
+        mock_graph = MagicMock()
+        mock_graph.invoke.return_value = _mock_result()
+        mock_build.return_value = mock_graph
+
+        assert (
+            main(["Convert class components", str(tmp_path), "--skills", "vercel-react-best-practices"])
+            == EXIT_SUCCESS
+        )
+        call_kwargs = mock_build.call_args.kwargs
+        assert call_kwargs["selected_skills"] == ["vercel-react-best-practices"]

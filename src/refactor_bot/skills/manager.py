@@ -12,6 +12,11 @@ def activate_skills_for_repo(
     """Helper called from RepoIndexer / CLI."""
     registry.register_from_package("vercel_react_best_practices")
     if selected_skill_names:
+        for skill_name in selected_skill_names:
+            normalized_skill_name = skill_name.strip().lower().replace("_", "-")
+            if not registry.has_skill(normalized_skill_name):
+                registry.register_from_package(normalized_skill_name)
+
         registry.activate_by_name(selected_skill_names)
     else:
         registry.auto_activate(repo_index, directive)
