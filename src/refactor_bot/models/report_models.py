@@ -81,12 +81,16 @@ class PRRiskLevel(str, Enum):
     CRITICAL = "critical"
 
 
+PR_ARTIFACT_SCHEMA_VERSION = "1.0.0"
+
+
 class PRArtifact(BaseModel):
     model_config = ConfigDict(frozen=False)
 
     title: str
     summary: str
     output_format: Literal["json", "markdown"] = "json"
+    schema_version: str = PR_ARTIFACT_SCHEMA_VERSION
     risk: PRRiskLevel
     changed_files: list[str] = Field(default_factory=list)
     rollback_files: list[str] = Field(default_factory=list)
@@ -118,4 +122,5 @@ __all__ = [
     "SkillMetadata",
     "PRRiskLevel",
     "PRArtifact",
+    "PR_ARTIFACT_SCHEMA_VERSION",
 ]

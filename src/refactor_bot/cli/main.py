@@ -9,7 +9,7 @@ from pathlib import Path
 
 from refactor_bot.agents.exceptions import AgentError
 from refactor_bot.orchestrator.exceptions import OrchestratorError
-from refactor_bot.models import PRArtifact, PRRiskLevel, AuditReport, TestReport, TaskStatus
+from refactor_bot.models import PRArtifact, PRRiskLevel, AuditReport, TestReport, TaskStatus, PR_ARTIFACT_SCHEMA_VERSION
 
 load_dotenv()
 
@@ -138,7 +138,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default="json",
         choices=("json", "markdown"),
-        help="Artifact output format: json (default) or markdown",
+        help=(
+            "Artifact output format: json (default) or markdown. "
+            f"Markdown renders schema version {PR_ARTIFACT_SCHEMA_VERSION}."
+        ),
     )
     return parser
 
@@ -390,13 +393,28 @@ def _render_pr_artifact_markdown(artifact: PRArtifact) -> str:
     changed = "".join(f"- {path}\n" for path in artifact.changed_files) or "- (none)\n"
     checklist = "".join(f"- [ ] {item}\n" for item in artifact.reviewer_checklist)
     rollback = "".join(f"- `{item}`\n" for item in artifact.rollback_instructions)
+    generated_at = artifact.generated_at.isoformat()
     return (
+        "---\n"
+        f"schema_version: {artifact.schema_version}\n"
+        f"title: \"{artifact.title}\"\n"
+        f"generated_at: {generated_at}\n"
+        f"risk: \"{artifact.risk}\"\n"
+        "artifact_type: pr-review\n"
+        "---\n\n"
         f"# {artifact.title}\n\n"
-        f"**Risk:** {artifact.risk}\n\n"
-        f"**Summary:** {artifact.summary}\n\n"
-        f"**Task metrics:** total={artifact.task_count}, "
-        f"completed={artifact.completed_task_count}, "
-        f"skipped={artifact.skipped_task_count}, failed={artifact.failed_task_count}\n\n"
+        "## Executive Summary\n"
+        f"{artifact.summary}\n\n"
+        "## Quality and Validation\n"
+        f"- Audit passed: {'yes' if artifact.audit_passed else 'no'}\n"
+        f"- Tests passed: {'yes' if artifact.tests_passed else 'no'}\n"
+        f"- Low trust mode: {'yes' if artifact.low_trust_pass else 'no'}\n"
+        f"- Error count: {artifact.failed_task_count + artifact.skipped_task_count}\n\n"
+        "## Task Status\n"
+        f"- Total tasks: {artifact.task_count}\n"
+        f"- Completed: {artifact.completed_task_count}\n"
+        f"- Skipped: {artifact.skipped_task_count}\n"
+        f"- Failed: {artifact.failed_task_count}\n\n"
         "## Changed files\n"
         f"{changed}\n"
         "## Reviewer checklist\n"

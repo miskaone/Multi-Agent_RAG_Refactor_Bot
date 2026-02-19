@@ -430,6 +430,12 @@ class TestMainHappyPath:
         assert rc == EXIT_SUCCESS
         assert artifact_path.exists()
         text = artifact_path.read_text(encoding="utf-8")
-        assert text.startswith("# Refactor: test directive")
+        assert text.startswith("---\n")
+        assert "schema_version: 1.0.0" in text
+        assert "artifact_type: pr-review" in text
+        assert "## Executive Summary" in text
+        assert "## Quality and Validation" in text
+        assert "## Task Status" in text
         assert "## Reviewer checklist" in text
         assert "`git checkout -- src/app.tsx`" in text
+        assert "Error count:" in text
