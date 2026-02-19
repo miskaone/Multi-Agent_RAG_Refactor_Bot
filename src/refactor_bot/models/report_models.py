@@ -3,6 +3,8 @@
 from datetime import datetime
 from enum import Enum
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -84,9 +86,12 @@ class PRArtifact(BaseModel):
 
     title: str
     summary: str
+    output_format: Literal["json", "markdown"] = "json"
     risk: PRRiskLevel
     changed_files: list[str] = Field(default_factory=list)
     rollback_files: list[str] = Field(default_factory=list)
+    reviewer_checklist: list[str] = Field(default_factory=list)
+    rollback_instructions: list[str] = Field(default_factory=list)
     task_count: int = 0
     completed_task_count: int = 0
     skipped_task_count: int = 0

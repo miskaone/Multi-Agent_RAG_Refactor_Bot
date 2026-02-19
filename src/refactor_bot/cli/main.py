@@ -38,6 +38,7 @@ _SAFE_CONFIG_KEYS = frozenset({
     "skills", "allow_no_runner_pass", "llm_provider", "llm_fallback_provider",
     "allow_llm_fallback", "allow_no_runner_pass", "interactive_fallback",
     "output_pr_artifact",
+    "output_pr_artifact_format",
 })
 
 
@@ -131,6 +132,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Write PR artifact JSON to this path (for example: ./artifacts/pr_artifact.json)"
         ),
+    )
+    parser.add_argument(
+        "--output-pr-artifact-format",
+        type=str,
+        default="json",
+        choices=("json", "markdown"),
+        help="Artifact output format: json (default) or markdown",
     )
     return parser
 
@@ -310,6 +318,15 @@ def _build_pr_artifact(directive: str, result: dict) -> PRArtifact:
     )
 
     rollback_files = [f for f in changed_files]
+    reviewer_checklist = _build_reviewer_checklist(
+        audit_passed=audit_passed,
+        tests_passed=tests_passed,
+        low_trust_pass=low_trust_pass,
+        failed_count=failed_count,
+        skipped_count=skipped_count,
+        errors=errors,
+    )
+    rollback_instructions = _build_rollback_instructions(rollback_files)
 
     return PRArtifact(
         title=f"Refactor: {directive[:72]}",
@@ -317,6 +334,8 @@ def _build_pr_artifact(directive: str, result: dict) -> PRArtifact:
         risk=risk,
         changed_files=changed_files,
         rollback_files=rollback_files,
+        reviewer_checklist=reviewer_checklist,
+        rollback_instructions=rollback_instructions,
         task_count=len(task_tree),
         completed_task_count=completed_count,
         skipped_task_count=skipped_count,
@@ -327,12 +346,76 @@ def _build_pr_artifact(directive: str, result: dict) -> PRArtifact:
     )
 
 
-def _write_pr_artifact(path: str, artifact: PRArtifact) -> None:
+def _build_reviewer_checklist(
+    *,
+    audit_passed: bool,
+    tests_passed: bool,
+    low_trust_pass: bool,
+    failed_count: int,
+    skipped_count: int,
+    errors: list[str],
+) -> list[str]:
+    """Build a reviewer checklist based on run outcome."""
+    checklist = [
+        "Review all generated diffs for correctness and intent.",
+        "Confirm changed files are scoped to the requested directive.",
+        "Validate task statuses and ensure no critical tasks were unintentionally skipped.",
+    ]
+    if not audit_passed:
+        checklist.append("Address all audit findings before merging.")
+    if not tests_passed:
+        checklist.append("Resolve test failures before merging.")
+    if low_trust_pass:
+        checklist.append("Manually approve because low-trust test path was used.")
+    if failed_count > 0:
+        checklist.append("Investigate failed task execution and re-run this refactor.")
+    if skipped_count > 0:
+        checklist.append("Confirm skipped tasks are intentionally deferred.")
+    if errors:
+        checklist.append("Address all listed run errors before merging.")
+    checklist.append("Run local smoke checks (lint/targeted tests) before merge.")
+    return checklist
+
+
+def _build_rollback_instructions(rollback_files: list[str]) -> list[str]:
+    """Build simple rollback instructions for changed files."""
+    if not rollback_files:
+        return ["No files were changed; no rollback required."]
+    steps = [f"git checkout -- {path}" for path in rollback_files]
+    steps.append("git checkout -- .")
+    return steps
+
+
+def _render_pr_artifact_markdown(artifact: PRArtifact) -> str:
+    changed = "".join(f"- {path}\n" for path in artifact.changed_files) or "- (none)\n"
+    checklist = "".join(f"- [ ] {item}\n" for item in artifact.reviewer_checklist)
+    rollback = "".join(f"- `{item}`\n" for item in artifact.rollback_instructions)
+    return (
+        f"# {artifact.title}\n\n"
+        f"**Risk:** {artifact.risk}\n\n"
+        f"**Summary:** {artifact.summary}\n\n"
+        f"**Task metrics:** total={artifact.task_count}, "
+        f"completed={artifact.completed_task_count}, "
+        f"skipped={artifact.skipped_task_count}, failed={artifact.failed_task_count}\n\n"
+        "## Changed files\n"
+        f"{changed}\n"
+        "## Reviewer checklist\n"
+        f"{checklist}\n"
+        "## Rollback instructions\n"
+        f"{rollback}\n"
+    )
+
+
+def _write_pr_artifact(path: str, artifact: PRArtifact, output_format: str) -> None:
     """Serialize and write PRArtifact to disk."""
     artifact_path = Path(path).expanduser().resolve()
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_format == "markdown":
+        payload = _render_pr_artifact_markdown(artifact)
+    else:
+        payload = format_result_json(artifact.model_dump())
     artifact_path.write_text(
-        format_result_json(artifact.model_dump()),
+        payload,
         encoding="utf-8",
     )
 
@@ -440,6 +523,7 @@ def main(argv: list[str] | None = None) -> int:
         "skills": args.skills,
         "allow_no_runner_pass": args.allow_no_runner_pass,
         "output_pr_artifact": args.output_pr_artifact,
+        "output_pr_artifact_format": args.output_pr_artifact_format,
     }
 
     if args.dry_run:
@@ -473,9 +557,11 @@ def main(argv: list[str] | None = None) -> int:
 
         artifact_path = args.output_pr_artifact
         if artifact_path:
+            artifact_format = args.output_pr_artifact_format
             try:
                 artifact = _build_pr_artifact(args.directive, result)
-                _write_pr_artifact(artifact_path, artifact)
+                artifact.output_format = artifact_format
+                _write_pr_artifact(artifact_path, artifact, artifact_format)
                 if args.verbose:
                     print(f"PR artifact written: {artifact_path}")
             except Exception as exc:

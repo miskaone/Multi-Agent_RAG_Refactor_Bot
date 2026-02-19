@@ -106,6 +106,7 @@ class TestBuildParser:
         assert args.output_json is True
         assert args.dry_run is True
         assert args.verbose is True
+        assert args.output_pr_artifact_format == "json"
 
     def test_parser_defaults(self):
         parser = build_parser()
@@ -118,6 +119,7 @@ class TestBuildParser:
         assert args.dry_run is False
         assert args.verbose is False
         assert args.output_pr_artifact == ""
+        assert args.output_pr_artifact_format == "json"
 
     def test_parser_no_api_key_flags(self):
         """API keys removed from CLI args (SEC-C7-001); verify they don't exist."""
@@ -372,3 +374,62 @@ class TestMainHappyPath:
         loaded = json.loads(artifact_path.read_text(encoding="utf-8"))
         assert loaded["title"].startswith("Refactor:")
         assert "directive='test directive'" in loaded["summary"]
+        assert loaded["output_format"] == "json"
+        assert "reviewer_checklist" in loaded
+        assert loaded["rollback_files"] == ["src/app.tsx"]
+
+    @patch("refactor_bot.orchestrator.graph.build_graph")
+    @patch("refactor_bot.cli.main.create_agents")
+    def test_main_outputs_markdown_pr_artifact(
+        self, mock_create, mock_build, tmp_path
+    ):
+        mock_create.return_value = _mock_agents()
+        mock_graph = MagicMock()
+        mock_graph.invoke.return_value = _mock_result(
+            task_tree=[
+                TaskNode(
+                    task_id="RF-001",
+                    description="do x",
+                    affected_files=["src/app.tsx"],
+                    dependencies=[],
+                    status=TaskStatus.COMPLETED,
+                )
+            ],
+            diffs=[FileDiff(
+                file_path="src/app.tsx",
+                original_content="x",
+                modified_content="y",
+                diff_text="--- a\n+++ b\n",
+                task_id="RF-001",
+            )],
+            audit_results=AuditReport(passed=True, diffs_audited=1, error_count=0),
+            test_results=TestReport(
+                passed=True,
+                pre_run=None,
+                post_run=TestRunResult(
+                    runner="none",
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    passed=10,
+                    failed=0,
+                ),
+                breaking_changes=[],
+                runner_available=True,
+            ),
+        )
+        mock_build.return_value = mock_graph
+
+        artifact_path = tmp_path / "pr_artifact.md"
+        rc = main([
+            "test directive",
+            str(tmp_path),
+            "--output-pr-artifact", str(artifact_path),
+            "--output-pr-artifact-format", "markdown",
+        ])
+        assert rc == EXIT_SUCCESS
+        assert artifact_path.exists()
+        text = artifact_path.read_text(encoding="utf-8")
+        assert text.startswith("# Refactor: test directive")
+        assert "## Reviewer checklist" in text
+        assert "`git checkout -- src/app.tsx`" in text
