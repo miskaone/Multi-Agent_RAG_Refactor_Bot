@@ -381,11 +381,30 @@ def _build_reviewer_checklist(
 
 
 def _build_rollback_instructions(rollback_files: list[str]) -> list[str]:
-    """Build simple rollback instructions for changed files."""
+    """Build deterministic rollback instructions for full and partial reverts."""
     if not rollback_files:
-        return ["No files were changed; no rollback required."]
-    steps = [f"git checkout -- {path}" for path in rollback_files]
-    steps.append("git checkout -- .")
+        return [
+            "No files were changed; no rollback required.",
+            "Optional: confirm with git status --short before closeout.",
+        ]
+
+    steps = [
+        "git status --short",
+        "git rev-parse --abbrev-ref HEAD",
+        "git restore --source=HEAD --worktree --staged .",
+        "git restore --source=HEAD --worktree -- .",
+    ]
+    steps.extend(
+        [
+            "Full rollback completed; verify:",
+            "git status --short",
+        ]
+    )
+    for path in rollback_files:
+        steps.append(f"git restore --source=HEAD --worktree -- {path}")
+    steps.append(
+        "If restore conflicts occur, inspect with git status and resolve manually before continuing."
+    )
     return steps
 
 

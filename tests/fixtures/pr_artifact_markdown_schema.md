@@ -30,4 +30,10 @@ artifact_type: pr-review
 - [ ] <checklist-item>
 
 ## Rollback instructions
-- `<command>`
+- `git status --short`
+- `git rev-parse --abbrev-ref HEAD`
+- `git restore --source=HEAD --worktree --staged .`
+- `git restore --source=HEAD --worktree -- .`
+- `git restore --source=HEAD --worktree -- <path>`
+- `git status --short`
+- `If restore conflicts occur, inspect with \`git status\` and resolve manually before continuing.`

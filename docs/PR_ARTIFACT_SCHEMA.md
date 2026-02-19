@@ -41,3 +41,19 @@ artifact_type: pr-review
 
 `Risk` and `Quality and Validation` entries are derived from run results.
 `Error count` in markdown is derived from failed/skipped task totals.
+
+## Rollback command sequence
+
+- `git status --short`
+- `git rev-parse --abbrev-ref HEAD`
+- `git restore --source=HEAD --worktree --staged .`
+- `git restore --source=HEAD --worktree -- .`
+
+The generator also includes per-file restore commands for each changed file:
+
+`git restore --source=HEAD --worktree -- <path>`
+
+If any restore action reports a conflict, treat it as a manual merge task:
+
+1. `git status`
+2. resolve conflicts manually

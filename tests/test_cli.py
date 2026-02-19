@@ -437,5 +437,5 @@ class TestMainHappyPath:
         assert "## Quality and Validation" in text
         assert "## Task Status" in text
         assert "## Reviewer checklist" in text
-        assert "`git checkout -- src/app.tsx`" in text
+        assert "`git restore --source=HEAD --worktree -- src/app.tsx`" in text
         assert "Error count:" in text
