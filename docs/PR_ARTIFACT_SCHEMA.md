@@ -57,3 +57,10 @@ If any restore action reports a conflict, treat it as a manual merge task:
 
 1. `git status`
 2. resolve conflicts manually
+
+## Compatibility notes
+
+- JSON remains the default artifact format (`--output-pr-artifact-format json`).
+- Markdown is an explicit opt-in variant for humans/PR workflows.
+- Existing JSON parsers should continue to work as the JSON payload remains a single
+  top-level object with additive-only schema fields.
