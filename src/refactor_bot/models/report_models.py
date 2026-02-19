@@ -70,3 +70,20 @@ class TestReport(BaseModel):
     llm_analysis: str | None = None
     tested_at: datetime = Field(default_factory=datetime.now)
     low_trust_pass: bool = False
+
+
+# Backward-compatible model exports for downstream integrations.
+from refactor_bot.models.skill_models import RefactorRule as SkillRefactorRule, SkillMetadata
+
+RefactorRule = SkillRefactorRule
+
+__all__ = [
+    "AuditFinding",
+    "AuditReport",
+    "BreakingChange",
+    "FindingSeverity",
+    "TestReport",
+    "TestRunResult",
+    "RefactorRule",
+    "SkillMetadata",
+]
