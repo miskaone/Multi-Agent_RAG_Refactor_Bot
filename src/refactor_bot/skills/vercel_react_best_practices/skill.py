@@ -3,6 +3,7 @@ from pathlib import Path
 from ...skills.base import Skill
 from ...models.skill_models import SkillMetadata
 from ...models.skill_models import RefactorRule
+from .rules import get_rules
 
 
 class VercelReactBestPracticesSkill(Skill):
@@ -20,8 +21,10 @@ class VercelReactBestPracticesSkill(Skill):
         return getattr(repo_index, 'is_react_project', False) or "react" in (directive or "").lower()
 
     def get_rules(self) -> list[RefactorRule]:
-        # Expand with rule parser in next step
-        return []  # placeholder
+        skill_path = Path(__file__).parent / "SKILL.md"
+        if not skill_path.exists():
+            return []
+        return get_rules(skill_path)
 
     def get_prompt_context(self, directive: str, task=None) -> str:
         ag_path = Path(__file__).parent / "AGENTS.md"
