@@ -1,7 +1,7 @@
 # Multi-Agent RAG Refactor Bot
 
 ![Python](https://img.shields.io/badge/python-3.12+-blue.svg)
-![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)
+![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)
 ![Tests](https://img.shields.io/badge/tests-262%20passing-brightgreen.svg)
 ![Coverage](https://img.shields.io/badge/coverage-91%25-brightgreen.svg)
 
@@ -132,6 +132,7 @@ python -m refactor_bot.cli "Migrate to TypeScript" ./my-project \
 | `--dry-run` | false | Print config and exit |
 | `--output-json` | false | Output results as JSON |
 | `--verbose` | false | Show stack traces on error |
+| `--skills` | `auto` | Comma-separated skill names (e.g. `vercel-react-best-practices`) or `auto` |
 
 ### Release and review
 
