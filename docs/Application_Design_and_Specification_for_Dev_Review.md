@@ -70,7 +70,8 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
 - `decide_fn` routes to:
   - `apply_node` on pass.
   - `retry_node` if budget remains.
-  - `abort_node` on repeated failures or test pass-rate failure.
+  - `skip_node` when tests pass but audit keeps failing and retries are exhausted.
+  - `abort_node` on repeated hard failures, test pass-rate failure, or no-trust rejection thresholds.
 - End state returns cumulative state object with results.
 
 ## Orchestration Specification
@@ -267,16 +268,16 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
 
 ## Reviewed Gaps vs PRD/Docs
 
-- PRD claims full PR output and artifact generation features (title, summary, risk, rollback files), but current code contains no PR generator.
+- PRD claims full PR output and artifact generation features (title, summary, risk, rollback files). PR flow includes a PR artifact JSON output, but richer PR workflow content/format is still partially out of scope.
 - PRD references up to 57 rules across all React categories; **full Vercel React Best Practices skill (57 rules) is now loaded via Skills framework** with parser-backed rules and canonical AGENTS.md context.
-- PRD claims "skip/retry/abort" branching, while graph currently includes retry and abort, but no active skip-edge in the built graph.
+- PRD claims "skip/retry/abort" branching, and retry/abort/skip behavior is now present; remaining gap is operational policy for when to permit skip as a fallback action.
 - Abort threshold is `0.85` in code and docs state mixed target thresholds (`85%`, `95%` in different sections).
 
 ## Dev Review Findings
 
 ## Critical
 
-- `src/refactor_bot/orchestrator/graph.py`: `skip_node` remains defined but not wired into the built graph. PRD-style skip semantics are documented but not implemented as runtime edge behavior.
+- `src/refactor_bot/cli/main.py`: `--output-pr-artifact` writes JSON summary but PRD-style richer PR payload contract is still partial (e.g., rollback instruction object and template output).
 
 ## Warning
 
@@ -287,7 +288,7 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
 
 ## Final Readiness Summary (for reviewer sign-off)
 
-- Architecture: `READY` with one known non-blocking behavior gap (`skip_node` path).
+- Architecture: `READY` with one non-blocking behavior gap (enhanced PR artifact contract scope).
 - Skill system: `READY` with parser-backed rules, canonical Vercel context, activation controls, and compatibility aliases.
 - Regression confidence: `PASS` with the documented closure command and all known rollout checks passing.
 - Security posture: `MODERATE` due to no-runner fallback requiring explicit operator approval flag.
@@ -318,6 +319,7 @@ CLI -> Orchestrator Graph -> Agents -> Reports/Exit
 - All P0 items from previous spec (skip_node decision, no-runner policy, Skills integration, etc.) are now **DONE**.
 
 ### Remaining Work for v0.2.1
-- Wire or remove `skip_node` in `graph.py` (non-blocking).
-- Add explicit contract tests for `RefactorState` transitions.
-- Finalize PR generator (Phase 1 roadmap item).
+- Finalize PR generator workflow:
+  - Expand `PRArtifact` schema and template output.
+  - Add rollback/instructions fields.
+  - Add optional `--output-pr-artifact-format` and docs for CI consumers.
