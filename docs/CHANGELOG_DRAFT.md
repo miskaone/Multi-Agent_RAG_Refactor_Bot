@@ -1,5 +1,13 @@
 # Changelog (Draft)
 
+## 2026-02-19 (v0.2.0 Released)
+
+- Release finalized in `docs/RELEASE_NOTES_v0.2.0.md`.
+- Core changes in this release:
+  - Skills architecture rollout completion and parser-backed Vercel React best-practices integration.
+  - Final compatibility safety and control-repo hardening.
+  - Documentation updates for spec/readiness and provider/env behavior.
+
 ## 2026-02-19 (Skills rollout closeout)
 
 - Added consolidated Skills release and risk artifacts:
