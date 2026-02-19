@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from refactor_bot.rules.react_rules import REACT_RULES
 from refactor_bot.skills.manager import activate_skills_for_repo
 from refactor_bot.skills.registry import registry
 from refactor_bot.skills.vercel_react_best_practices import rules
@@ -35,6 +36,42 @@ def test_vercel_rules_parser_reads_quick_reference(tmp_path: Path):
     rule_ids = {r.rule_id for r in parsed}
     assert rule_ids == {"async-parallel", "bundle-barrel-imports"}
     assert parsed[0].category in {"Eliminating Waterfalls", "Bundle Size Optimization"}
+
+
+def test_vercel_rules_parser_handles_flexible_markup(tmp_path: Path):
+    skill_markdown = tmp_path / "SKILL.md"
+    skill_markdown.write_text(
+        "\n".join(
+            [
+                "# Skill",
+                "## 2. Bundle Size Optimization (CRITICAL)",
+                "* `bundle-conditional` Use conditional imports for dev-only tooling",
+                "1. `bundle-dynamic-imports` - Split heavy modules into dynamic imports",
+                "| `bundle-barrel-imports` | Avoid importing module roots |",
+                "",
+                "```ts",
+                "- `ignore-me` - should not be parsed",
+                "```",
+            ]
+        )
+    )
+
+    parsed = rules.get_rules(skill_markdown)
+    rule_ids = {r.rule_id for r in parsed}
+    assert "bundle-conditional" in rule_ids
+    assert "bundle-dynamic-imports" in rule_ids
+    assert "bundle-barrel-imports" in rule_ids
+    assert "ignore-me" not in rule_ids
+    assert parsed[0].rule_id in {"bundle-conditional", "bundle-dynamic-imports", "bundle-barrel-imports"}
+
+
+def test_vercel_rules_parser_fallback_to_react_catalog_on_missing_reference(tmp_path: Path):
+    skill_markdown = tmp_path / "SKILL.md"
+    skill_markdown.write_text("[placeholder content copied from upstream is pending]")
+
+    parsed = rules.get_rules(skill_markdown)
+    assert len(parsed) == len(REACT_RULES)
+    assert {r.rule_id for r in parsed} == {r.rule_id for r in REACT_RULES}
 
 
 def test_vercel_skill_load_from_disk_uses_prompt_and_rules(tmp_path: Path):
