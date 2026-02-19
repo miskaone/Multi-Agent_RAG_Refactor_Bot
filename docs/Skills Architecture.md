@@ -2,7 +2,7 @@
 
 **Version:** 1.0 (for v0.2.0+)  
 **Date:** February 18, 2026  
-**Status:** Proposed → Implement after v0.1.1
+**Status:** Implemented for v0.2.0 (first-party Vercel React skill)
 
 ## Overview
 
@@ -24,7 +24,7 @@ This design is **100% compatible** with the official [Vercel Agent Skills standa
 - Community-contributable (drop in a new skill folder).
 - Perfectly aligns with future `LanguagePack` system.
 - Turns “some extended Vercel React support” into first-class, updatable skills.
-- CLI control: `--skills vercel-react-best-practices,security,typescript-strict`
+- CLI control: `--skills vercel-react-best-practices`
 
 ## Directory Structure
 
