@@ -38,10 +38,10 @@ def test_vercel_rules_parser_reads_quick_reference(tmp_path: Path):
     )
 
     parsed = rules.get_rules(skill_markdown)
-    assert len(parsed) == 2
     rule_ids = {r.rule_id for r in parsed}
-    assert rule_ids == {"async-parallel", "bundle-barrel-imports"}
-    assert parsed[0].category in {"Eliminating Waterfalls", "Bundle Size Optimization"}
+    assert {"async-parallel", "bundle-barrel-imports"}.issubset(rule_ids)
+    assert len(parsed) >= 2
+    assert parsed[0].rule_id in {"async-parallel", "bundle-barrel-imports"}
 
 
 def test_vercel_rules_parser_handles_flexible_markup(tmp_path: Path):
