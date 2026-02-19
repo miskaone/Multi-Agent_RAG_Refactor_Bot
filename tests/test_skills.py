@@ -149,3 +149,24 @@ class TestSkillActivation:
         )
         assert active
         assert active[0].metadata.name == "vercel-react-best-practices"
+
+
+def test_public_model_exports_remain_compatible():
+    from refactor_bot.models.report_models import RefactorRule as LegacyRefactorRule
+    from refactor_bot.models.skill_models import RefactorRule as CoreRefactorRule
+    from refactor_bot.models import RefactorRule as PackageRefactorRule
+    from refactor_bot.models import SkillMetadata
+
+    assert LegacyRefactorRule is CoreRefactorRule
+    assert PackageRefactorRule is CoreRefactorRule
+    assert isinstance(
+        SkillMetadata(
+            name="x",
+            version="1",
+            description="y",
+            impact_levels=["LOW"],
+            categories=["c"],
+            triggers=["t"],
+        ),
+        SkillMetadata,
+    )
