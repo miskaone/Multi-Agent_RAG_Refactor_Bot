@@ -6,6 +6,8 @@ from refactor_bot.models.report_models import (
     AuditReport,
     BreakingChange,
     FindingSeverity,
+    PRArtifact,
+    PRRiskLevel,
     TestReport,
     TestRunResult,
 )
@@ -30,6 +32,8 @@ __all__ = [
     "FileDiff",
     "FileInfo",
     "FindingSeverity",
+    "PRArtifact",
+    "PRRiskLevel",
     "ReactMetadata",
     "RepoIndex",
     "RetrievalResult",

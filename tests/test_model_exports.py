@@ -1,4 +1,4 @@
-from refactor_bot.models import RefactorRule, SkillMetadata
+from refactor_bot.models import RefactorRule, SkillMetadata, PRArtifact, PRRiskLevel
 from refactor_bot.models.report_models import RefactorRule as LegacyRefactorRule
 from refactor_bot.models.skill_models import RefactorRule as CoreRefactorRule
 
@@ -17,3 +17,5 @@ def test_public_model_exports_remain_compatible():
         ),
         SkillMetadata,
     )
+    assert PRRiskLevel.LOW == "low"
+    assert isinstance(PRArtifact, type)

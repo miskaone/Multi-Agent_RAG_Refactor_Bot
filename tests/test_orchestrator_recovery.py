@@ -41,7 +41,7 @@ def make_diff(file_path: str, task_id: str) -> FileDiff:
 
 def make_test_report(passed_count: int, failed_count: int) -> TestReport:
     """Helper to create a TestReport with given pass/fail counts."""
-    return TestReport(
+        return TestReport(
         passed=failed_count == 0,
         pre_run=None,
         post_run=TestRunResult(
@@ -177,3 +177,34 @@ class TestNextTaskOrEnd:
         state["task_tree"] = [make_task("RF-001", status=TaskStatus.COMPLETED)]
         result = next_task_or_end(state)
         assert result == "done"
+
+
+# ---------------------------------------------------------------------------
+# get_current_task
+# ---------------------------------------------------------------------------
+
+class TestGetCurrentTask:
+    """Tests for task lookup by current_task_index."""
+
+    def test_get_current_task_returns_task_at_index(self):
+        """State cursor resolves to the task at the current index."""
+        state = make_initial_state("Refactor", "/tmp")
+        first = make_task("RF-001", status=TaskStatus.PENDING)
+        second = make_task("RF-002", status=TaskStatus.PENDING)
+        state["task_tree"] = [first, second]
+        state["current_task_index"] = 1
+
+        task = get_current_task(state)
+
+        assert task is not None
+        assert task.task_id == "RF-002"
+
+    def test_get_current_task_returns_none_when_out_of_bounds(self):
+        """State cursor outside task_tree returns None."""
+        state = make_initial_state("Refactor", "/tmp")
+        state["task_tree"] = [make_task("RF-001", status=TaskStatus.PENDING)]
+        state["current_task_index"] = 3
+
+        task = get_current_task(state)
+
+        assert task is None

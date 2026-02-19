@@ -72,6 +72,31 @@ class TestReport(BaseModel):
     low_trust_pass: bool = False
 
 
+class PRRiskLevel(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class PRArtifact(BaseModel):
+    model_config = ConfigDict(frozen=False)
+
+    title: str
+    summary: str
+    risk: PRRiskLevel
+    changed_files: list[str] = Field(default_factory=list)
+    rollback_files: list[str] = Field(default_factory=list)
+    task_count: int = 0
+    completed_task_count: int = 0
+    skipped_task_count: int = 0
+    failed_task_count: int = 0
+    audit_passed: bool = False
+    tests_passed: bool = False
+    low_trust_pass: bool = False
+    generated_at: datetime = Field(default_factory=datetime.now)
+
+
 # Backward-compatible model exports for downstream integrations.
 from refactor_bot.models.skill_models import RefactorRule as SkillRefactorRule, SkillMetadata
 
@@ -86,4 +111,6 @@ __all__ = [
     "TestRunResult",
     "RefactorRule",
     "SkillMetadata",
+    "PRRiskLevel",
+    "PRArtifact",
 ]

@@ -22,6 +22,7 @@ from refactor_bot.models import (
 from refactor_bot.orchestrator.graph import (
     apply_node,
     abort_node,
+    skip_node,
     make_audit_node,
     make_decide_fn,
     make_execute_node,
@@ -390,7 +391,20 @@ class TestDecideFn:
         assert result == "abort"
 
     def test_decide_fn_abort_retries_exhausted(self):
-        """When retries >= max_retries -> 'abort'."""
+        """When tests fail repeatedly, low pass rate causes immediate abort."""
+        decide = make_decide_fn()
+        state = self._make_state_with_results(
+            audit_passed=False,
+            test_passed=False,
+            retry_count=3,
+            max_retries=3,
+            test_fail_count=10,
+        )
+        result = decide(state)
+        assert result == "abort"
+
+    def test_decide_fn_skip_after_exhausted_retries(self):
+        """Audit failures with passing tests and exhausted retries -> 'skip'."""
         decide = make_decide_fn()
         state = self._make_state_with_results(
             audit_passed=False,
@@ -399,7 +413,7 @@ class TestDecideFn:
             max_retries=3,
         )
         result = decide(state)
-        assert result == "abort"
+        assert result == "skip"
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +436,17 @@ class TestApplyNode:
         completed = [t for t in updated_tasks if t.task_id == "RF-001"]
         assert len(completed) == 1
         assert completed[0].status == TaskStatus.COMPLETED
+
+    def test_apply_node_noop_when_index_out_of_bounds(self):
+        """Invalid current index is ignored (no state mutation)."""
+        state = make_initial_state("Refactor", "/tmp")
+        task = make_task("RF-001", status=TaskStatus.IN_PROGRESS)
+        state["task_tree"] = [task]
+        state["current_task_index"] = 9
+
+        result = apply_node(state)
+
+        assert result["task_tree"] == state["task_tree"]
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +471,52 @@ class TestRetryNode:
         assert pending[0].status == TaskStatus.PENDING
         # Errors should contain a context message
         assert isinstance(result.get("errors", []), list)
+
+    def test_retry_node_noop_when_index_out_of_bounds(self):
+        """Retry with invalid current index appends a diagnostic and preserves tree."""
+        state = make_initial_state("Refactor", "/tmp")
+        task = make_task("RF-001", status=TaskStatus.IN_PROGRESS)
+        state["task_tree"] = [task]
+        state["current_task_index"] = 5
+
+        result = retry_node(state)
+
+        assert result["task_tree"] == state["task_tree"]
+        assert result["retry_counts"] == {}
+        assert any("out of bounds" in msg for msg in result.get("errors", []))
+
+
+# ---------------------------------------------------------------------------
+# skip_node tests
+# ---------------------------------------------------------------------------
+
+
+class TestSkipNode:
+    def test_skip_node_marks_skipped(self):
+        """skip_node marks the current task as SKIPPED."""
+        state = make_initial_state("Refactor", "/tmp")
+        task = make_task("RF-001", status=TaskStatus.IN_PROGRESS)
+        state["task_tree"] = [task]
+        state["current_task_index"] = 0
+
+        result = skip_node(state)
+
+        assert "task_tree" in result
+        updated_tasks = result["task_tree"]
+        skipped = [t for t in updated_tasks if t.task_id == "RF-001"]
+        assert len(skipped) == 1
+        assert skipped[0].status == TaskStatus.SKIPPED
+
+    def test_skip_node_noop_when_index_out_of_bounds(self):
+        """Invalid current index is ignored (task_tree remains unchanged)."""
+        state = make_initial_state("Refactor", "/tmp")
+        task = make_task("RF-001", status=TaskStatus.IN_PROGRESS)
+        state["task_tree"] = [task]
+        state["current_task_index"] = 10
+
+        result = skip_node(state)
+
+        assert result["task_tree"] == state["task_tree"]
 
 
 # ---------------------------------------------------------------------------
