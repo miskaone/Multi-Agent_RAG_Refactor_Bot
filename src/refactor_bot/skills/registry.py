@@ -26,11 +26,18 @@ class SkillRegistry:
         return cls()
 
     def register(self, skill: Skill) -> None:
-        self._skills[skill.metadata.name] = skill
+        self._skills[self._normalize_name(skill.metadata.name)] = skill
+
+    def has_skill(self, name: str) -> bool:
+        return self._normalize_name(name) in self._skills
+
+    def normalize_skill_names(self, names: List[str]) -> List[str]:
+        return [self._normalize_name(name) for name in names]
 
     def register_from_package(self, package_name: str) -> None:
         try:
-            module = importlib.import_module(f"refactor_bot.skills.{package_name}")
+            module_name = package_name.replace("-", "_")
+            module = importlib.import_module(f"refactor_bot.skills.{module_name}")
             if hasattr(module, "skill"):
                 skill = module.skill
                 try:
@@ -50,7 +57,21 @@ class SkillRegistry:
         return self._active_skills
 
     def activate_by_name(self, names: List[str]) -> None:
-        self._active_skills = [s for name, s in self._skills.items() if name in names]
+        normalized_names = self.normalize_skill_names(names)
+        unknown = [name for name in normalized_names if name not in self._skills]
+
+        if unknown:
+            raise ValueError(f"Unknown skill(s): {', '.join(unknown)}")
+
+        activated: list[Skill] = []
+        seen: set[str] = set()
+        for name in normalized_names:
+            skill = self._skills.get(name)
+            if skill is None or name in seen:
+                continue
+            activated.append(skill)
+            seen.add(name)
+        self._active_skills = activated
 
     def get_active_skills(self) -> List[Skill]:
         return self._active_skills
@@ -63,8 +84,15 @@ class SkillRegistry:
     def get_all_rules(self) -> List["RefactorRule"]:
         rules = []
         for s in self._active_skills:
-            rules.extend(s.get_rules())
+            try:
+                rules.extend(s.get_rules())
+            except Exception as exc:
+                print(f"[SkillRegistry] Failed to load rules from skill '{s.metadata.name}': {exc}")
         return rules
+
+    @staticmethod
+    def _normalize_name(value: str) -> str:
+        return value.strip().replace("_", "-").lower()
 
 
 registry = SkillRegistry.get_instance()
